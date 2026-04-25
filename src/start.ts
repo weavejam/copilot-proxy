@@ -6,7 +6,8 @@ import consola from "consola"
 import { serve, type ServerHandler } from "srvx"
 import invariant from "tiny-invariant"
 
-import { ensurePaths } from "./lib/paths"
+import { initDb } from "./lib/db"
+import { ensurePaths, PATHS } from "./lib/paths"
 import { initProxyFromEnv } from "./lib/proxy"
 import { generateEnvScript } from "./lib/shell"
 import { state } from "./lib/state"
@@ -25,6 +26,7 @@ interface RunServerOptions {
   claudeCode: boolean
   showToken: boolean
   proxyEnv: boolean
+  dbPath: string
 }
 
 export async function runServer(options: RunServerOptions): Promise<void> {
@@ -48,6 +50,7 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   state.showToken = options.showToken
 
   await ensurePaths()
+  initDb(options.dbPath)
   await cacheVSCodeVersion()
 
   if (options.githubToken) {
@@ -184,6 +187,12 @@ export const start = defineCommand({
       default: false,
       description: "Initialize proxy from environment variables",
     },
+    "db-path": {
+      type: "string",
+      default: PATHS.USAGE_DB_PATH,
+      description:
+        "Path to the usage SQLite database (defaults to ~/.local/share/copilot-api/usage.sqlite)",
+    },
   },
   run({ args }) {
     const rateLimitRaw = args["rate-limit"]
@@ -202,6 +211,7 @@ export const start = defineCommand({
       claudeCode: args["claude-code"],
       showToken: args["show-token"],
       proxyEnv: args["proxy-env"],
+      dbPath: args["db-path"],
     })
   },
 })
