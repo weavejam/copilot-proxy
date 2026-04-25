@@ -1,5 +1,6 @@
 import { Hono } from "hono"
 
+import { getDb } from "~/lib/db"
 import { state } from "~/lib/state"
 import {
   computeUsageStats,
@@ -60,6 +61,56 @@ async function fetchQuota(): Promise<QuotaPayload> {
   return { byAccount: results, primary }
 }
 
+interface PricingEntry {
+  model_id: string
+  input_per_mtok: number | null
+  cached_input_per_mtok: number | null
+  output_per_mtok: number | null
+  reasoning_per_mtok: number | null
+  premium_multiplier: number | null
+  premium_unit_price: number | null
+  source: string | null
+  updated_at: number | null
+}
+
+interface SyncLogEntry {
+  id: number
+  ts: number
+  status: string
+  llm_model: string
+  models_updated: number
+  models_rejected: number
+  error: string | null
+}
+
+function fetchPricingMeta(): {
+  models: Array<PricingEntry>
+  lastSync: SyncLogEntry | null
+} {
+  try {
+    const db = getDb()
+    const models = db
+      .query<PricingEntry, []>(
+        `SELECT model_id, input_per_mtok, cached_input_per_mtok,
+                output_per_mtok, reasoning_per_mtok,
+                premium_multiplier, premium_unit_price,
+                source, updated_at
+         FROM model_pricing ORDER BY model_id`,
+      )
+      .all()
+    const lastSync =
+      db
+        .query<SyncLogEntry, []>(
+          `SELECT id, ts, status, llm_model, models_updated, models_rejected, error
+         FROM pricing_sync_log ORDER BY id DESC LIMIT 1`,
+        )
+        .get() ?? null
+    return { models, lastSync }
+  } catch {
+    return { models: [], lastSync: null }
+  }
+}
+
 usageRoute.get("/", async (c) => {
   const stats = (() => {
     try {
@@ -86,5 +137,6 @@ usageRoute.get("/", async (c) => {
     ...(primary as Record<string, unknown> | null | undefined),
     quota,
     stats,
+    pricing: fetchPricingMeta(),
   })
 })
