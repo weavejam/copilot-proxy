@@ -7,7 +7,11 @@ import { awaitApproval } from "~/lib/approval"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
 import { getTokenCount } from "~/lib/tokenizer"
-import { isNullish } from "~/lib/utils"
+import {
+  isNullish,
+  makeApiContext,
+  resolveAndMapModelId,
+} from "~/lib/utils"
 import {
   createChatCompletions,
   type ChatCompletionResponse,
@@ -18,6 +22,10 @@ export async function handleCompletion(c: Context) {
   await checkRateLimit(state)
 
   let payload = await c.req.json<ChatCompletionsPayload>()
+  payload = {
+    ...payload,
+    model: resolveAndMapModelId(payload.model, c, state.models?.data ?? []),
+  }
   consola.debug("Request payload:", JSON.stringify(payload).slice(-400))
 
   // Find the selected model
@@ -47,7 +55,14 @@ export async function handleCompletion(c: Context) {
     consola.debug("Set max_tokens to:", JSON.stringify(payload.max_tokens))
   }
 
-  const response = await createChatCompletions(payload)
+  if (!state.pool) throw new Error("Account pool not initialized")
+  const account = state.pool.acquire()
+  let response: Awaited<ReturnType<typeof createChatCompletions>>
+  try {
+    response = await createChatCompletions(makeApiContext(account), payload)
+  } finally {
+    state.pool.release(account)
+  }
 
   if (isNonStreaming(response)) {
     consola.debug("Non-streaming response:", JSON.stringify(response))

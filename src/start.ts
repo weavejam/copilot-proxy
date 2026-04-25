@@ -61,8 +61,7 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   // Resolve legacy single token if no accounts file is provided.
   let legacyToken = options.githubToken
   if (!options.accountsFile && !legacyToken) {
-    await setupGitHubToken()
-    legacyToken = state.githubToken
+    legacyToken = await setupGitHubToken()
   } else if (legacyToken) {
     consola.info("Using provided GitHub token")
   }
@@ -80,7 +79,7 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   }
 
   const pool = new AccountPool(loaded, options.strategy)
-  // eslint-disable-next-line require-atomic-updates
+
   state.pool = pool
   persistAccounts(loaded)
 

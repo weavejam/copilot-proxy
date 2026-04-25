@@ -2,6 +2,7 @@ import { defineCommand } from "citty"
 import consola from "consola"
 
 import { ensurePaths } from "./lib/paths"
+import { state } from "./lib/state"
 import { setupGitHubToken } from "./lib/token"
 import {
   getCopilotUsage,
@@ -15,9 +16,20 @@ export const checkUsage = defineCommand({
   },
   async run() {
     await ensurePaths()
-    await setupGitHubToken()
+    const githubToken = await setupGitHubToken()
     try {
-      const usage = await getCopilotUsage()
+      const usage = await getCopilotUsage({
+        account: {
+          name: "_check-usage",
+          accountType: state.accountType,
+          githubToken,
+          copilotTokenRefreshAt: 0,
+          inFlight: 0,
+          lastUsedAt: 0,
+          failureCount: 0,
+        },
+        vsCodeVersion: state.vsCodeVersion,
+      })
       const premium = usage.quota_snapshots.premium_interactions
       const premiumTotal = premium.entitlement
       const premiumUsed = premiumTotal - premium.remaining

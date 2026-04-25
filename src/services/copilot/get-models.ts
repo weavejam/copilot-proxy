@@ -1,10 +1,11 @@
+import type { ApiContext } from "~/lib/api-config"
+
 import { copilotBaseUrl, copilotHeaders } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
-import { state } from "~/lib/state"
 
-export const getModels = async () => {
-  const response = await fetch(`${copilotBaseUrl(state)}/models`, {
-    headers: copilotHeaders(state),
+export const getModels = async (ctx: ApiContext) => {
+  const response = await fetch(`${copilotBaseUrl(ctx)}/models`, {
+    headers: copilotHeaders(ctx),
   })
 
   if (!response.ok) throw new HTTPError("Failed to get models", response)

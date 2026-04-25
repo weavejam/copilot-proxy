@@ -1,13 +1,17 @@
+import type { ApiContext } from "~/lib/api-config"
+
 import { copilotHeaders, copilotBaseUrl } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
-import { state } from "~/lib/state"
 
-export const createEmbeddings = async (payload: EmbeddingRequest) => {
-  if (!state.copilotToken) throw new Error("Copilot token not found")
+export const createEmbeddings = async (
+  ctx: ApiContext,
+  payload: EmbeddingRequest,
+) => {
+  if (!ctx.account.copilotToken) throw new Error("Copilot token not found")
 
-  const response = await fetch(`${copilotBaseUrl(state)}/embeddings`, {
+  const response = await fetch(`${copilotBaseUrl(ctx)}/embeddings`, {
     method: "POST",
-    headers: copilotHeaders(state),
+    headers: copilotHeaders(ctx),
     body: JSON.stringify(payload),
   })
 

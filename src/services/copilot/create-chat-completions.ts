@@ -1,14 +1,16 @@
 import consola from "consola"
 import { events } from "fetch-event-stream"
 
+import type { ApiContext } from "~/lib/api-config"
+
 import { copilotHeaders, copilotBaseUrl } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
-import { state } from "~/lib/state"
 
 export const createChatCompletions = async (
+  ctx: ApiContext,
   payload: ChatCompletionsPayload,
 ) => {
-  if (!state.copilotToken) throw new Error("Copilot token not found")
+  if (!ctx.account.copilotToken) throw new Error("Copilot token not found")
 
   const enableVision = payload.messages.some(
     (x) =>
@@ -17,18 +19,16 @@ export const createChatCompletions = async (
   )
 
   // Agent/user check for X-Initiator header
-  // Determine if any message is from an agent ("assistant" or "tool")
   const isAgentCall = payload.messages.some((msg) =>
     ["assistant", "tool"].includes(msg.role),
   )
 
-  // Build headers and add X-Initiator
   const headers: Record<string, string> = {
-    ...copilotHeaders(state, enableVision),
+    ...copilotHeaders(ctx, enableVision),
     "X-Initiator": isAgentCall ? "agent" : "user",
   }
 
-  const response = await fetch(`${copilotBaseUrl(state)}/chat/completions`, {
+  const response = await fetch(`${copilotBaseUrl(ctx)}/chat/completions`, {
     method: "POST",
     headers,
     body: JSON.stringify(payload),

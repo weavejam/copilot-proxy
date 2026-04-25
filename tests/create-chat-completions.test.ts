@@ -1,16 +1,22 @@
 import { test, expect, mock } from "bun:test"
 
+import type { Account } from "../src/lib/account-pool"
 import type { ChatCompletionsPayload } from "../src/services/copilot/create-chat-completions"
 
-import { state } from "../src/lib/state"
 import { createChatCompletions } from "../src/services/copilot/create-chat-completions"
 
-// Mock state
-state.copilotToken = "test-token"
-state.vsCodeVersion = "1.0.0"
-state.accountType = "individual"
+const account: Account = {
+  name: "test",
+  accountType: "individual",
+  githubToken: "ghu_test",
+  copilotToken: "test-token",
+  copilotTokenRefreshAt: 0,
+  inFlight: 0,
+  lastUsedAt: 0,
+  failureCount: 0,
+}
+const ctx = { account, vsCodeVersion: "1.0.0" }
 
-// Helper to mock fetch
 const fetchMock = mock(
   (_url: string, opts: { headers: Record<string, string> }) => {
     return {
@@ -31,7 +37,7 @@ test("sets X-Initiator to agent if tool/assistant present", async () => {
     ],
     model: "gpt-test",
   }
-  await createChatCompletions(payload)
+  await createChatCompletions(ctx, payload)
   expect(fetchMock).toHaveBeenCalled()
   const headers = (
     fetchMock.mock.calls[0][1] as { headers: Record<string, string> }
@@ -47,7 +53,7 @@ test("sets X-Initiator to user if only user present", async () => {
     ],
     model: "gpt-test",
   }
-  await createChatCompletions(payload)
+  await createChatCompletions(ctx, payload)
   expect(fetchMock).toHaveBeenCalled()
   const headers = (
     fetchMock.mock.calls[1][1] as { headers: Record<string, string> }
