@@ -162,10 +162,12 @@ export async function callSyncLlm(
 }
 
 function diffsExceeds(
-  a: number | null | undefined,
-  b: number | null | undefined,
+  rawA: number | null | undefined,
+  rawB: number | null | undefined,
   epsilon: number,
 ): boolean {
+  const a = rawA ?? null
+  const b = rawB ?? null
   if (a === null && b === null) return false
   if (a === null || b === null) return true
   if (a === 0 && b === 0) return false
