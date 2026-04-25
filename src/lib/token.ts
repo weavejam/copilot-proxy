@@ -11,30 +11,21 @@ import { pollAccessToken } from "~/services/github/poll-access-token"
 
 import { HTTPError } from "./error"
 import { state } from "./state"
+import { makeApiContext } from "./utils"
 
 const readGithubToken = () => fs.readFile(PATHS.GITHUB_TOKEN_PATH, "utf8")
 
 const writeGithubToken = (token: string) =>
   fs.writeFile(PATHS.GITHUB_TOKEN_PATH, token)
 
-/**
- * Set up the Copilot token for a single account, including auto-refresh.
- * The previous global helper `setupCopilotToken` is replaced by per-account
- * setup; legacy `state.copilotToken` is mirrored for not-yet-migrated callers.
- */
+/** Per-account Copilot token setup with auto-refresh. */
 export const setupCopilotTokenFor = async (account: Account) => {
-  // Temporarily expose this account's GitHub token for the legacy
-  // api-config helper which still reads `state.githubToken`.
-  state.githubToken = account.githubToken
-  const { token, refresh_in } = await getCopilotToken()
+  const ctx = makeApiContext(account)
+  const { token, refresh_in } = await getCopilotToken(ctx)
   /* eslint-disable require-atomic-updates */
   account.copilotToken = token
   account.copilotTokenRefreshAt = Date.now() + refresh_in * 1000
   /* eslint-enable require-atomic-updates */
-
-  // Mirror the first account's token into legacy state for callers
-  // not yet migrated to the pool (removed in task 03).
-  state.copilotToken = token
 
   consola.debug(`[${account.name}] Copilot token fetched successfully`)
   if (state.showToken) {
@@ -45,13 +36,11 @@ export const setupCopilotTokenFor = async (account: Account) => {
   account.refreshTimer = setInterval(async () => {
     consola.debug(`[${account.name}] Refreshing Copilot token`)
     try {
-      state.githubToken = account.githubToken
-      const refreshed = await getCopilotToken()
+      const refreshed = await getCopilotToken(makeApiContext(account))
       /* eslint-disable require-atomic-updates */
       account.copilotToken = refreshed.token
       account.copilotTokenRefreshAt = Date.now() + refreshed.refresh_in * 1000
       /* eslint-enable require-atomic-updates */
-      state.copilotToken = refreshed.token
       consola.debug(`[${account.name}] Copilot token refreshed`)
       if (state.showToken) {
         consola.info(
@@ -70,20 +59,23 @@ interface SetupGitHubTokenOptions {
   force?: boolean
 }
 
+/**
+ * Reads or fetches a single GitHub token file at PATHS.GITHUB_TOKEN_PATH.
+ * Returns the token; the caller is responsible for putting it into the
+ * account pool.
+ */
 export async function setupGitHubToken(
   options?: SetupGitHubTokenOptions,
-): Promise<void> {
+): Promise<string> {
   try {
     const githubToken = await readGithubToken()
 
     if (githubToken && !options?.force) {
-      state.githubToken = githubToken
       if (state.showToken) {
         consola.info("GitHub token:", githubToken)
       }
-      await logUser()
-
-      return
+      await logUser(githubToken)
+      return githubToken
     }
 
     consola.info("Not logged in, getting new access token")
@@ -96,12 +88,12 @@ export async function setupGitHubToken(
 
     const token = await pollAccessToken(response)
     await writeGithubToken(token)
-    state.githubToken = token
 
     if (state.showToken) {
       consola.info("GitHub token:", token)
     }
-    await logUser()
+    await logUser(token)
+    return token
   } catch (error) {
     if (error instanceof HTTPError) {
       consola.error("Failed to get GitHub token:", await error.response.json())
@@ -113,16 +105,21 @@ export async function setupGitHubToken(
   }
 }
 
-/** Backwards-compat wrapper: sets up Copilot token for the default account. */
-export const setupCopilotToken = async () => {
-  if (state.pool && state.pool.accounts.length > 0) {
-    await setupCopilotTokenFor(state.pool.accounts[0])
-    return
+async function logUser(githubToken: string) {
+  // Build a temporary "anonymous" account with just the GitHub token,
+  // so we can call /user without going through the pool.
+  const tempAccount: Account = {
+    name: "_setup",
+    accountType: state.accountType,
+    githubToken,
+    copilotTokenRefreshAt: 0,
+    inFlight: 0,
+    lastUsedAt: 0,
+    failureCount: 0,
   }
-  // No pool yet (very early callers) — do nothing.
-}
-
-async function logUser() {
-  const user = await getGitHubUser()
+  const user = await getGitHubUser({
+    account: tempAccount,
+    vsCodeVersion: state.vsCodeVersion,
+  })
   consola.info(`Logged in as ${user.login}`)
 }
