@@ -3,10 +3,17 @@ import type { Context } from "hono"
 import consola from "consola"
 import { streamSSE, type SSEMessage } from "hono/streaming"
 
+import type { Account } from "~/lib/account-pool"
+
 import { awaitApproval } from "~/lib/approval"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
 import { getTokenCount } from "~/lib/tokenizer"
+import {
+  normalizeOpenAIFinal,
+  type NormalizedUsage,
+} from "~/lib/usage-normalizer"
+import { recordUsage } from "~/lib/usage-recorder"
 import { isNullish, makeApiContext, resolveAndMapModelId } from "~/lib/utils"
 import { withAccount } from "~/lib/with-account"
 import {
@@ -14,6 +21,14 @@ import {
   type ChatCompletionResponse,
   type ChatCompletionsPayload,
 } from "~/services/copilot/create-chat-completions"
+
+const ZERO_USAGE: NormalizedUsage = {
+  inputTokens: 0,
+  cachedInputTokens: 0,
+  outputTokens: 0,
+  reasoningTokens: 0,
+  totalTokens: 0,
+}
 
 export async function handleCompletion(c: Context) {
   await checkRateLimit(state)
@@ -25,12 +40,10 @@ export async function handleCompletion(c: Context) {
   }
   consola.debug("Request payload:", JSON.stringify(payload).slice(-400))
 
-  // Find the selected model
   const selectedModel = state.models?.data.find(
     (model) => model.id === payload.model,
   )
 
-  // Calculate and display token count
   try {
     if (selectedModel) {
       const tokenCount = await getTokenCount(payload, selectedModel)
@@ -52,12 +65,49 @@ export async function handleCompletion(c: Context) {
     consola.debug("Set max_tokens to:", JSON.stringify(payload.max_tokens))
   }
 
-  const response = await withAccount(c, (account) =>
-    createChatCompletions(makeApiContext(account), payload),
-  )
+  const isInternal = c.req.header("x-internal-pricing-sync") === "1"
+  const tStart = Date.now()
+  let usedAccount: Account | undefined
+
+  let response: Awaited<ReturnType<typeof createChatCompletions>>
+  try {
+    response = await withAccount(c, (account) => {
+      usedAccount = account
+      return createChatCompletions(makeApiContext(account), payload)
+    })
+  } catch (err) {
+    if (usedAccount) {
+      recordUsage({
+        account: usedAccount,
+        modelId: payload.model,
+        endpoint: "chat.completions",
+        upstreamFormat: "openai",
+        isStreaming: Boolean(payload.stream),
+        usage: ZERO_USAGE,
+        durationMs: Date.now() - tStart,
+        status: "error",
+        isInternal,
+      })
+    }
+    throw err
+  }
 
   if (isNonStreaming(response)) {
     consola.debug("Non-streaming response:", JSON.stringify(response))
+    if (usedAccount) {
+      recordUsage({
+        account: usedAccount,
+        modelId: payload.model,
+        endpoint: "chat.completions",
+        upstreamFormat: "openai",
+        isStreaming: false,
+        usage: normalizeOpenAIFinal(response.usage),
+        durationMs: Date.now() - tStart,
+        status: "ok",
+        requestId: response.id,
+        isInternal,
+      })
+    }
     return c.json(response)
   }
 
