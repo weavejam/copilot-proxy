@@ -6,12 +6,14 @@ import consola from "consola"
 import { serve, type ServerHandler } from "srvx"
 import invariant from "tiny-invariant"
 
+import { AccountPool, type Strategy } from "./lib/account-pool"
+import { loadAccounts, persistAccounts } from "./lib/accounts-loader"
 import { initDb } from "./lib/db"
 import { ensurePaths, PATHS } from "./lib/paths"
 import { initProxyFromEnv } from "./lib/proxy"
 import { generateEnvScript } from "./lib/shell"
 import { state } from "./lib/state"
-import { setupCopilotToken, setupGitHubToken } from "./lib/token"
+import { setupCopilotTokenFor, setupGitHubToken } from "./lib/token"
 import { cacheModels, cacheVSCodeVersion } from "./lib/utils"
 import { server } from "./server"
 
@@ -27,6 +29,8 @@ interface RunServerOptions {
   showToken: boolean
   proxyEnv: boolean
   dbPath: string
+  accountsFile?: string
+  strategy: Strategy
 }
 
 export async function runServer(options: RunServerOptions): Promise<void> {
@@ -40,6 +44,7 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   }
 
   state.accountType = options.accountType
+  state.strategy = options.strategy
   if (options.accountType !== "individual") {
     consola.info(`Using ${options.accountType} plan GitHub account`)
   }
@@ -53,14 +58,42 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   initDb(options.dbPath)
   await cacheVSCodeVersion()
 
-  if (options.githubToken) {
-    state.githubToken = options.githubToken
-    consola.info("Using provided GitHub token")
-  } else {
+  // Resolve legacy single token if no accounts file is provided.
+  let legacyToken = options.githubToken
+  if (!options.accountsFile && !legacyToken) {
     await setupGitHubToken()
+    legacyToken = state.githubToken
+  } else if (legacyToken) {
+    consola.info("Using provided GitHub token")
   }
 
-  await setupCopilotToken()
+  const loaded = await loadAccounts({
+    accountsFile: options.accountsFile,
+    legacyToken,
+    defaultAccountType: options.accountType,
+  })
+
+  if (loaded.length === 0) {
+    throw new Error(
+      "No accounts available. Provide --accounts-file or --github-token, or run `auth`.",
+    )
+  }
+
+  const pool = new AccountPool(loaded, options.strategy)
+  // eslint-disable-next-line require-atomic-updates
+  state.pool = pool
+  persistAccounts(loaded)
+
+  consola.info(
+    `Loaded ${loaded.length} account${loaded.length === 1 ? "" : "s"} (strategy: ${options.strategy})`,
+  )
+
+  // Fetch Copilot token for each account in parallel.
+  await Promise.all(loaded.map((a) => setupCopilotTokenFor(a)))
+  for (const a of loaded) {
+    consola.info(`[${a.name}] ready`)
+  }
+
   await cacheModels()
 
   consola.info(
@@ -193,6 +226,17 @@ export const start = defineCommand({
       description:
         "Path to the usage SQLite database (defaults to ~/.local/share/copilot-api/usage.sqlite)",
     },
+    "accounts-file": {
+      type: "string",
+      description:
+        "Path to a JSON file containing multiple GitHub Copilot accounts",
+    },
+    strategy: {
+      type: "string",
+      default: "round-robin",
+      description:
+        "Account selection strategy: round-robin | least-busy | least-recent",
+    },
   },
   run({ args }) {
     const rateLimitRaw = args["rate-limit"]
@@ -212,6 +256,8 @@ export const start = defineCommand({
       showToken: args["show-token"],
       proxyEnv: args["proxy-env"],
       dbPath: args["db-path"],
+      accountsFile: args["accounts-file"],
+      strategy: args.strategy as Strategy,
     })
   },
 })
