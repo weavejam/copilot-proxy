@@ -10,6 +10,7 @@ import { AccountPool, type Strategy } from "./lib/account-pool"
 import { loadAccounts, persistAccounts } from "./lib/accounts-loader"
 import { initDb } from "./lib/db"
 import { ensurePaths, PATHS } from "./lib/paths"
+import { schedulePricingSync } from "./lib/pricing-scheduler"
 import { initProxyFromEnv } from "./lib/proxy"
 import { generateEnvScript } from "./lib/shell"
 import { state } from "./lib/state"
@@ -31,6 +32,53 @@ interface RunServerOptions {
   dbPath: string
   accountsFile?: string
   strategy: Strategy
+  pricingSyncModel?: string
+  pricingSyncIntervalDays: number
+  pricingSyncDisabled: boolean
+}
+
+async function promptClaudeCodeSetup(serverUrl: string): Promise<void> {
+  invariant(state.models, "Models should be loaded by now")
+
+  const selectedModel = await consola.prompt(
+    "Select a model to use with Claude Code",
+    {
+      type: "select",
+      options: state.models.data.map((model) => model.id),
+    },
+  )
+
+  const selectedSmallModel = await consola.prompt(
+    "Select a small model to use with Claude Code",
+    {
+      type: "select",
+      options: state.models.data.map((model) => model.id),
+    },
+  )
+
+  const command = generateEnvScript(
+    {
+      ANTHROPIC_BASE_URL: serverUrl,
+      ANTHROPIC_AUTH_TOKEN: "dummy",
+      ANTHROPIC_MODEL: selectedModel,
+      ANTHROPIC_DEFAULT_SONNET_MODEL: selectedModel,
+      ANTHROPIC_SMALL_FAST_MODEL: selectedSmallModel,
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: selectedSmallModel,
+      DISABLE_NON_ESSENTIAL_MODEL_CALLS: "1",
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+    },
+    "claude",
+  )
+
+  try {
+    clipboard.writeSync(command)
+    consola.success("Copied Claude Code command to clipboard!")
+  } catch {
+    consola.warn(
+      "Failed to copy to clipboard. Here is the Claude Code command:",
+    )
+    consola.log(command)
+  }
 }
 
 export async function runServer(options: RunServerOptions): Promise<void> {
@@ -102,47 +150,7 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   const serverUrl = `http://localhost:${options.port}`
 
   if (options.claudeCode) {
-    invariant(state.models, "Models should be loaded by now")
-
-    const selectedModel = await consola.prompt(
-      "Select a model to use with Claude Code",
-      {
-        type: "select",
-        options: state.models.data.map((model) => model.id),
-      },
-    )
-
-    const selectedSmallModel = await consola.prompt(
-      "Select a small model to use with Claude Code",
-      {
-        type: "select",
-        options: state.models.data.map((model) => model.id),
-      },
-    )
-
-    const command = generateEnvScript(
-      {
-        ANTHROPIC_BASE_URL: serverUrl,
-        ANTHROPIC_AUTH_TOKEN: "dummy",
-        ANTHROPIC_MODEL: selectedModel,
-        ANTHROPIC_DEFAULT_SONNET_MODEL: selectedModel,
-        ANTHROPIC_SMALL_FAST_MODEL: selectedSmallModel,
-        ANTHROPIC_DEFAULT_HAIKU_MODEL: selectedSmallModel,
-        DISABLE_NON_ESSENTIAL_MODEL_CALLS: "1",
-        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
-      },
-      "claude",
-    )
-
-    try {
-      clipboard.writeSync(command)
-      consola.success("Copied Claude Code command to clipboard!")
-    } catch {
-      consola.warn(
-        "Failed to copy to clipboard. Here is the Claude Code command:",
-      )
-      consola.log(command)
-    }
+    await promptClaudeCodeSetup(serverUrl)
   }
 
   consola.box(
@@ -153,6 +161,14 @@ export async function runServer(options: RunServerOptions): Promise<void> {
     fetch: server.fetch as ServerHandler,
     port: options.port,
   })
+
+  if (!options.pricingSyncDisabled) {
+    schedulePricingSync({
+      port: options.port,
+      intervalDays: options.pricingSyncIntervalDays,
+      syncModel: options.pricingSyncModel,
+    })
+  }
 }
 
 export const start = defineCommand({
@@ -236,6 +252,21 @@ export const start = defineCommand({
       description:
         "Account selection strategy: round-robin | least-busy | least-recent",
     },
+    "pricing-sync-model": {
+      type: "string",
+      description:
+        "Model to use for LLM-powered pricing sync (default: auto-select from whitelist)",
+    },
+    "pricing-sync-interval-days": {
+      type: "string",
+      default: "7",
+      description: "How often (in days) to re-sync model pricing",
+    },
+    "pricing-sync-disabled": {
+      type: "boolean",
+      default: false,
+      description: "Disable automatic background pricing sync",
+    },
   },
   run({ args }) {
     const rateLimitRaw = args["rate-limit"]
@@ -257,6 +288,12 @@ export const start = defineCommand({
       dbPath: args["db-path"],
       accountsFile: args["accounts-file"],
       strategy: args.strategy as Strategy,
+      pricingSyncModel: args["pricing-sync-model"],
+      pricingSyncIntervalDays: Number.parseInt(
+        args["pricing-sync-interval-days"],
+        10,
+      ),
+      pricingSyncDisabled: args["pricing-sync-disabled"],
     })
   },
 })
