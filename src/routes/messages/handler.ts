@@ -6,6 +6,7 @@ import { streamSSE } from "hono/streaming"
 import { awaitApproval } from "~/lib/approval"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
+import { makeApiContext, resolveAndMapModelId } from "~/lib/utils"
 import {
   createChatCompletions,
   type ChatCompletionChunk,
@@ -28,7 +29,15 @@ export async function handleCompletion(c: Context) {
   const anthropicPayload = await c.req.json<AnthropicMessagesPayload>()
   consola.debug("Anthropic request payload:", JSON.stringify(anthropicPayload))
 
-  const openAIPayload = translateToOpenAI(anthropicPayload)
+  let openAIPayload = translateToOpenAI(anthropicPayload, c)
+  openAIPayload = {
+    ...openAIPayload,
+    model: resolveAndMapModelId(
+      openAIPayload.model,
+      undefined,
+      state.models?.data ?? [],
+    ),
+  }
   consola.debug(
     "Translated OpenAI request payload:",
     JSON.stringify(openAIPayload),
@@ -38,7 +47,14 @@ export async function handleCompletion(c: Context) {
     await awaitApproval()
   }
 
-  const response = await createChatCompletions(openAIPayload)
+  if (!state.pool) throw new Error("Account pool not initialized")
+  const account = state.pool.acquire()
+  let response: Awaited<ReturnType<typeof createChatCompletions>>
+  try {
+    response = await createChatCompletions(makeApiContext(account), openAIPayload)
+  } finally {
+    state.pool.release(account)
+  }
 
   if (isNonStreaming(response)) {
     consola.debug(
