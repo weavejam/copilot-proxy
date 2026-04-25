@@ -10,8 +10,11 @@ import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
 import { getTokenCount } from "~/lib/tokenizer"
 import {
+  createOpenAIAccumulator,
   normalizeOpenAIFinal,
+  UsageMissingError,
   type NormalizedUsage,
+  type StreamUsageAccumulator,
 } from "~/lib/usage-normalizer"
 import { recordUsage } from "~/lib/usage-recorder"
 import { isNullish, makeApiContext, resolveAndMapModelId } from "~/lib/utils"
@@ -28,6 +31,92 @@ const ZERO_USAGE: NormalizedUsage = {
   outputTokens: 0,
   reasoningTokens: 0,
   totalTokens: 0,
+}
+
+interface RecordContext {
+  account: Account
+  modelId: string
+  isInternal: boolean
+  tStart: number
+}
+
+function feedFrame(
+  rawEvent: { data?: string },
+  accumulator: StreamUsageAccumulator,
+): string | undefined {
+  if (!rawEvent.data || rawEvent.data === "[DONE]") return undefined
+  try {
+    const parsed = JSON.parse(rawEvent.data) as {
+      id?: string
+      usage?: unknown
+    }
+    accumulator.feed(parsed)
+    return parsed.id
+  } catch {
+    return undefined
+  }
+}
+
+function finalizeStreamUsage(
+  accumulator: StreamUsageAccumulator,
+  status: "ok" | "error" | "aborted",
+): { usage: NormalizedUsage; status: "ok" | "error" | "aborted" } {
+  try {
+    return { usage: accumulator.finalize(), status }
+  } catch (err) {
+    if (err instanceof UsageMissingError) {
+      consola.warn(
+        "Streaming completed without an include_usage frame; recording zero usage",
+      )
+    } else {
+      consola.error("Failed to finalize stream usage:", err)
+    }
+    return {
+      usage: ZERO_USAGE,
+      status: status === "ok" ? "error" : status,
+    }
+  }
+}
+
+function streamAndRecord(
+  c: Context,
+  response: AsyncIterable<{ data?: string }>,
+  ctx: RecordContext,
+) {
+  return streamSSE(c, async (stream) => {
+    const accumulator = createOpenAIAccumulator()
+    let status: "ok" | "error" | "aborted" = "ok"
+    let lastRequestId: string | undefined
+    try {
+      for await (const rawEvent of response) {
+        if (c.req.raw.signal.aborted) {
+          status = "aborted"
+          break
+        }
+        const id = feedFrame(rawEvent, accumulator)
+        if (id) lastRequestId = id
+        consola.debug("Streaming chunk:", JSON.stringify(rawEvent))
+        await stream.writeSSE(rawEvent as SSEMessage)
+      }
+    } catch (err) {
+      status = "error"
+      consola.error("Streaming chat-completions error:", err)
+    }
+
+    const result = finalizeStreamUsage(accumulator, status)
+    recordUsage({
+      account: ctx.account,
+      modelId: ctx.modelId,
+      endpoint: "chat.completions",
+      upstreamFormat: "openai",
+      isStreaming: true,
+      usage: result.usage,
+      durationMs: Date.now() - ctx.tStart,
+      status: result.status,
+      requestId: lastRequestId,
+      isInternal: ctx.isInternal,
+    })
+  })
 }
 
 export async function handleCompletion(c: Context) {
@@ -112,11 +201,19 @@ export async function handleCompletion(c: Context) {
   }
 
   consola.debug("Streaming response")
-  return streamSSE(c, async (stream) => {
-    for await (const chunk of response) {
-      consola.debug("Streaming chunk:", JSON.stringify(chunk))
-      await stream.writeSSE(chunk as SSEMessage)
-    }
+  if (!usedAccount) {
+    // Should never happen — withAccount always invokes the callback.
+    return streamSSE(c, async (stream) => {
+      for await (const chunk of response) {
+        await stream.writeSSE(chunk as SSEMessage)
+      }
+    })
+  }
+  return streamAndRecord(c, response, {
+    account: usedAccount,
+    modelId: payload.model,
+    isInternal,
+    tStart,
   })
 }
 

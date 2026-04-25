@@ -12,14 +12,31 @@ export const createChatCompletions = async (
 ) => {
   if (!ctx.account.copilotToken) throw new Error("Copilot token not found")
 
-  const enableVision = payload.messages.some(
+  // For streaming requests, force `stream_options.include_usage = true` so
+  // the upstream emits a final usage frame we can record. Some clients send
+  // `include_usage: false` explicitly — override anyway and log at debug.
+  let outgoing = payload
+  if (payload.stream) {
+    const existing = payload.stream_options ?? {}
+    if (existing.include_usage !== true) {
+      consola.debug(
+        "Forcing stream_options.include_usage=true for usage tracking",
+      )
+    }
+    outgoing = {
+      ...payload,
+      stream_options: { ...existing, include_usage: true },
+    }
+  }
+
+  const enableVision = outgoing.messages.some(
     (x) =>
       typeof x.content !== "string"
       && x.content?.some((x) => x.type === "image_url"),
   )
 
   // Agent/user check for X-Initiator header
-  const isAgentCall = payload.messages.some((msg) =>
+  const isAgentCall = outgoing.messages.some((msg) =>
     ["assistant", "tool"].includes(msg.role),
   )
 
@@ -31,7 +48,7 @@ export const createChatCompletions = async (
   const response = await fetch(`${copilotBaseUrl(ctx)}/chat/completions`, {
     method: "POST",
     headers,
-    body: JSON.stringify(payload),
+    body: JSON.stringify(outgoing),
   })
 
   if (!response.ok) {
@@ -39,7 +56,7 @@ export const createChatCompletions = async (
     throw new HTTPError("Failed to create chat completions", response)
   }
 
-  if (payload.stream) {
+  if (outgoing.stream) {
     return events(response)
   }
 
@@ -133,6 +150,7 @@ export interface ChatCompletionsPayload {
   stop?: string | Array<string> | null
   n?: number | null
   stream?: boolean | null
+  stream_options?: { include_usage?: boolean } | null
 
   frequency_penalty?: number | null
   presence_penalty?: number | null
