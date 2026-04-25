@@ -78,11 +78,33 @@ export function pickSyncModel(cliFlag: string | undefined): string {
 export async function buildSyncRequest(): Promise<SyncRequest> {
   const knownModels = state.models?.data.map((m) => m.id) ?? []
   const hasClaude = knownModels.some((m) => m.startsWith("claude"))
-  const [azureRows, anthropicHtml] = await Promise.all([
+  const [azureRowsRaw, anthropicHtml] = await Promise.all([
     fetchAzureRetailPrices(),
     hasClaude ? fetchAnthropicPricingHtml() : Promise.resolve(null),
   ])
-  return { knownModels, azureRows, anthropicHtml }
+  // Pre-filter Azure rows: keep only rows whose productName or meterName
+  // contain a token that resembles a known model id (e.g. "GPT-4o", "o3-mini").
+  const modelTokens = knownModels.map((m) => m.toLowerCase())
+  const azureRows = azureRowsRaw.filter((row) => {
+    const haystack =
+      `${row.productName ?? ""} ${row.meterName ?? ""} ${row.armSkuName ?? ""}`.toLowerCase()
+    return modelTokens.some((tok) => haystack.includes(tok))
+  })
+  consola.debug(
+    `Pricing sync: ${azureRowsRaw.length} Azure rows → ${azureRows.length} after filtering for ${knownModels.length} models`,
+  )
+  // Trim Anthropic HTML: extract only the pricing table area to reduce token count.
+  let trimmedAnthropicHtml = anthropicHtml
+  if (anthropicHtml && anthropicHtml.length > 10_000) {
+    // Keep a generous window around pricing-related content
+    const idx = anthropicHtml.toLowerCase().indexOf("pricing")
+    if (idx !== -1) {
+      const start = Math.max(0, idx - 2000)
+      const end = Math.min(anthropicHtml.length, idx + 8000)
+      trimmedAnthropicHtml = anthropicHtml.slice(start, end)
+    }
+  }
+  return { knownModels, azureRows, anthropicHtml: trimmedAnthropicHtml }
 }
 
 export const NORMALIZER_SYSTEM_PROMPT = `You are a pricing extractor. Convert raw price source rows from Azure Retail Prices API and the Anthropic public pricing page into a normalized JSON shape.
@@ -134,7 +156,6 @@ export async function callSyncLlm(
       },
       body: JSON.stringify({
         model: modelId,
-        response_format: { type: "json_object" },
         messages: [
           { role: "system", content: NORMALIZER_SYSTEM_PROMPT },
           { role: "user", content: JSON.stringify(req) },
@@ -143,8 +164,9 @@ export async function callSyncLlm(
     },
   )
   if (!resp.ok) {
+    const errorBody = await resp.text().catch(() => "<unreadable>")
     throw new Error(
-      `Pricing-sync LLM call failed: ${resp.status} ${resp.statusText}`,
+      `Pricing-sync LLM call failed: ${resp.status} ${resp.statusText}\n${errorBody}`,
     )
   }
   const body = (await resp.json()) as {
@@ -154,7 +176,12 @@ export async function callSyncLlm(
   if (!content) {
     throw new Error("Pricing-sync LLM response had no content")
   }
-  const parsed = JSON.parse(content) as ParsedPricing
+  // Strip markdown fences if the model wraps its response
+  const cleaned = content
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```\s*$/, "")
+    .trim()
+  const parsed = JSON.parse(cleaned) as ParsedPricing
   if (!Array.isArray(parsed.models)) {
     throw new TypeError("Pricing-sync LLM response missing `models` array")
   }
