@@ -3,6 +3,9 @@
 import { defineCommand } from "citty"
 import consola from "consola"
 
+import { authAdd } from "./auth-add"
+import { authList } from "./auth-list"
+import { authRemove } from "./auth-remove"
 import { PATHS, ensurePaths } from "./lib/paths"
 import { state } from "./lib/state"
 import { setupGitHubToken } from "./lib/token"
@@ -28,7 +31,8 @@ export async function runAuth(options: RunAuthOptions): Promise<void> {
 export const auth = defineCommand({
   meta: {
     name: "auth",
-    description: "Run GitHub auth flow without running the server",
+    description:
+      "Manage GitHub authentication. Run without subcommand for legacy single-token flow.",
   },
   args: {
     verbose: {
@@ -42,6 +46,11 @@ export const auth = defineCommand({
       default: false,
       description: "Show GitHub token on auth",
     },
+  },
+  subCommands: {
+    add: authAdd,
+    list: authList,
+    remove: authRemove,
   },
   run({ args }) {
     return runAuth({

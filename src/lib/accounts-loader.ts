@@ -1,9 +1,11 @@
+import consola from "consola"
 import fs from "node:fs/promises"
 import path from "node:path"
 
 import type { Account } from "./account-pool"
 
 import { getDb } from "./db"
+import { PATHS } from "./paths"
 
 export interface AccountsFileEntry {
   name: string
@@ -77,4 +79,61 @@ export function persistAccounts(accounts: Array<Account>): void {
     }
   })
   tx(accounts)
+}
+
+/** Read accounts file, returning empty accounts array if missing/invalid. */
+export async function readAccountsFile(
+  filePath?: string,
+): Promise<AccountsFile> {
+  const p = filePath ?? PATHS.ACCOUNTS_FILE_PATH
+  try {
+    const buf = await fs.readFile(p)
+    const parsed = JSON.parse(buf.toString("utf8")) as AccountsFile
+    if (Array.isArray(parsed.accounts)) return parsed
+  } catch {
+    // File missing or invalid — return empty
+  }
+  return { accounts: [] }
+}
+
+/** Write accounts file with restricted permissions. */
+export async function writeAccountsFile(
+  data: AccountsFile,
+  filePath?: string,
+): Promise<void> {
+  const p = filePath ?? PATHS.ACCOUNTS_FILE_PATH
+  await fs.writeFile(p, JSON.stringify(data, null, 2), "utf8")
+  try {
+    await fs.chmod(p, 0o600)
+  } catch {
+    // chmod may fail on Windows — non-critical
+  }
+}
+
+/** Append an account entry. Throws if name already exists. */
+export async function addAccountEntry(
+  entry: AccountsFileEntry,
+  filePath?: string,
+): Promise<void> {
+  const data = await readAccountsFile(filePath)
+  if (data.accounts.some((a) => a.name === entry.name)) {
+    throw new Error(`Account "${entry.name}" already exists`)
+  }
+  data.accounts.push(entry)
+  await writeAccountsFile(data, filePath)
+  consola.success(`Account "${entry.name}" added`)
+}
+
+/** Remove an account by name. Returns true if found and removed. */
+export async function removeAccountEntry(
+  name: string,
+  filePath?: string,
+): Promise<boolean> {
+  const data = await readAccountsFile(filePath)
+  const idx = data.accounts.findIndex((a) => a.name === name)
+  if (idx === -1) return false
+  data.accounts.splice(idx, 1)
+  await writeAccountsFile(data, filePath)
+  consola.success(`Account "${name}" removed`)
+  return true
 }

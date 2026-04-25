@@ -60,6 +60,19 @@ interface SetupGitHubTokenOptions {
 }
 
 /**
+ * Run the GitHub Device Flow OAuth and return the raw access token.
+ * Does NOT write the token to disk — caller decides what to do with it.
+ */
+export async function runDeviceFlow(): Promise<string> {
+  const response = await getDeviceCode()
+  consola.debug("Device code response:", response)
+  consola.info(
+    `Please enter the code "${response.user_code}" in ${response.verification_uri}`,
+  )
+  return pollAccessToken(response)
+}
+
+/**
  * Reads or fetches a single GitHub token file at PATHS.GITHUB_TOKEN_PATH.
  * Returns the token; the caller is responsible for putting it into the
  * account pool.
@@ -79,14 +92,7 @@ export async function setupGitHubToken(
     }
 
     consola.info("Not logged in, getting new access token")
-    const response = await getDeviceCode()
-    consola.debug("Device code response:", response)
-
-    consola.info(
-      `Please enter the code "${response.user_code}" in ${response.verification_uri}`,
-    )
-
-    const token = await pollAccessToken(response)
+    const token = await runDeviceFlow()
     await writeGithubToken(token)
 
     if (state.showToken) {
