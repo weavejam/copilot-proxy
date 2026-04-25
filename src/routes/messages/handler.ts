@@ -7,6 +7,7 @@ import { awaitApproval } from "~/lib/approval"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
 import { makeApiContext, resolveAndMapModelId } from "~/lib/utils"
+import { withAccount } from "~/lib/with-account"
 import {
   createChatCompletions,
   type ChatCompletionChunk,
@@ -47,14 +48,9 @@ export async function handleCompletion(c: Context) {
     await awaitApproval()
   }
 
-  if (!state.pool) throw new Error("Account pool not initialized")
-  const account = state.pool.acquire()
-  let response: Awaited<ReturnType<typeof createChatCompletions>>
-  try {
-    response = await createChatCompletions(makeApiContext(account), openAIPayload)
-  } finally {
-    state.pool.release(account)
-  }
+  const response = await withAccount(c, (account) =>
+    createChatCompletions(makeApiContext(account), openAIPayload),
+  )
 
   if (isNonStreaming(response)) {
     consola.debug(
