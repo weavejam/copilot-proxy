@@ -111,19 +111,21 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   await cacheVSCodeVersion()
 
   // Resolve accounts: multi-token CLI → accounts file → single token → interactive
-  const multiTokenEntries =
-    options.githubToken?.includes(",") ?
-      parseGithubTokenArgs(options.githubToken, options.accountType)
-    : undefined
-
   let legacyToken: string | undefined
-  if (!multiTokenEntries && !options.accountsFile) {
-    legacyToken = options.githubToken
-    if (!legacyToken) {
-      legacyToken = await setupGitHubToken()
-    } else {
-      consola.info("Using provided GitHub token")
+  let multiTokenEntries: ReturnType<typeof parseGithubTokenArgs> | undefined
+
+  if (options.githubToken && !options.accountsFile) {
+    multiTokenEntries = parseGithubTokenArgs(
+      options.githubToken,
+      options.accountType,
+    )
+    if (multiTokenEntries.length > 0) {
+      consola.info("Using provided GitHub token(s)")
     }
+  }
+
+  if (!multiTokenEntries?.length && !options.accountsFile) {
+    legacyToken = await setupGitHubToken()
   }
 
   const loaded = await loadAccounts({

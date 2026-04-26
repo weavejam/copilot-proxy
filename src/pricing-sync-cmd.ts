@@ -38,17 +38,18 @@ async function bootstrapServer(
   initDb(options.dbPath)
   await cacheVSCodeVersion()
 
-  const multiTokenEntries =
-    options.githubToken?.includes(",") ?
-      parseGithubTokenArgs(options.githubToken, options.accountType)
-    : undefined
-
   let legacyToken: string | undefined
-  if (!multiTokenEntries && !options.accountsFile) {
-    legacyToken = options.githubToken
-    if (!legacyToken) {
-      legacyToken = await setupGitHubToken()
-    }
+  let multiTokenEntries: ReturnType<typeof parseGithubTokenArgs> | undefined
+
+  if (options.githubToken && !options.accountsFile) {
+    multiTokenEntries = parseGithubTokenArgs(
+      options.githubToken,
+      options.accountType,
+    )
+  }
+
+  if (!multiTokenEntries?.length && !options.accountsFile) {
+    legacyToken = await setupGitHubToken()
   }
 
   const loaded = await loadAccounts({
