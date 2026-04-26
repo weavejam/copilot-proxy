@@ -37,19 +37,15 @@ describe("runPricingSync", () => {
     expect(out.updated).toBe(1)
 
     const versions = getDb()
-      .query<
-        { count: number },
-        []
-      >("SELECT COUNT(*) AS count FROM model_pricing_versions")
-      .get()
+      .prepare("SELECT COUNT(*) AS count FROM model_pricing_versions")
+      .get() as { count: number } | undefined
     expect(versions?.count).toBe(1)
 
     const live = getDb()
-      .query<
-        { input_per_mtok: number },
-        []
-      >("SELECT input_per_mtok FROM model_pricing WHERE model_id = 'gpt-4o'")
-      .get()
+      .prepare(
+        "SELECT input_per_mtok FROM model_pricing WHERE model_id = 'gpt-4o'",
+      )
+      .get() as { input_per_mtok: number } | undefined
     expect(live?.input_per_mtok).toBe(5)
   })
 
@@ -64,11 +60,8 @@ describe("runPricingSync", () => {
     })
     expect(r2.updated).toBe(0)
     const versions = getDb()
-      .query<
-        { count: number },
-        []
-      >("SELECT COUNT(*) AS count FROM model_pricing_versions")
-      .get()
+      .prepare("SELECT COUNT(*) AS count FROM model_pricing_versions")
+      .get() as { count: number } | undefined
     expect(versions?.count).toBe(1)
   })
 
@@ -83,11 +76,10 @@ describe("runPricingSync", () => {
     })
     expect(r2.updated).toBe(1)
     const rows = getDb()
-      .query<
-        { effective_to: number | null; input_per_mtok: number },
-        []
-      >("SELECT effective_to, input_per_mtok FROM model_pricing_versions ORDER BY id")
-      .all()
+      .prepare(
+        "SELECT effective_to, input_per_mtok FROM model_pricing_versions ORDER BY id",
+      )
+      .all() as Array<{ effective_to: number | null; input_per_mtok: number }>
     expect(rows).toHaveLength(2)
     expect(rows[0].effective_to).not.toBeNull()
     expect(rows[1].effective_to).toBeNull()
@@ -108,11 +100,10 @@ describe("runPricingSync", () => {
     expect(r2.status).toBe("rejected")
     expect(r2.updated).toBe(0)
     const live = getDb()
-      .query<
-        { input_per_mtok: number },
-        []
-      >("SELECT input_per_mtok FROM model_pricing WHERE model_id = 'gpt-4o'")
-      .get()
+      .prepare(
+        "SELECT input_per_mtok FROM model_pricing WHERE model_id = 'gpt-4o'",
+      )
+      .get() as { input_per_mtok: number } | undefined
     expect(live?.input_per_mtok).toBe(1) // unchanged
   })
 })

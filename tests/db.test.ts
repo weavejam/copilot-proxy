@@ -26,12 +26,13 @@ describe("db module", () => {
     const p = tmpDbPath()
     const db = initDb(p)
 
-    const tables = db
-      .query<{ name: string }, []>(
-        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
-      )
-      .all()
-      .map((r) => r.name)
+    const tables = (
+      db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
+        )
+        .all() as Array<{ name: string }>
+    ).map((r) => r.name)
 
     for (const t of [
       "accounts",
@@ -46,11 +47,8 @@ describe("db module", () => {
     }
 
     const ver = db
-      .query<
-        { value: string },
-        []
-      >("SELECT value FROM meta WHERE key='schema_version'")
-      .get()
+      .prepare("SELECT value FROM meta WHERE key='schema_version'")
+      .get() as { value: string } | undefined
     expect(ver?.value).toBe(String(CURRENT_SCHEMA_VERSION))
 
     db.close()
@@ -60,25 +58,24 @@ describe("db module", () => {
   test("initDb is idempotent: running twice leaves schema_version unchanged and does not duplicate rows", () => {
     const p = tmpDbPath()
     const db1 = initDb(p)
-    db1.run(
-      "INSERT INTO meta (key, value) VALUES ('marker', 'persisted') "
-        + "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-    )
+    db1
+      .prepare(
+        "INSERT INTO meta (key, value) VALUES ('marker', 'persisted') "
+          + "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+      )
+      .run()
     db1.close()
 
     __resetDbForTests()
     const db2 = initDb(p)
     const marker = db2
-      .query<{ value: string }, []>("SELECT value FROM meta WHERE key='marker'")
-      .get()
+      .prepare("SELECT value FROM meta WHERE key='marker'")
+      .get() as { value: string } | undefined
     expect(marker?.value).toBe("persisted")
 
     const ver = db2
-      .query<
-        { value: string },
-        []
-      >("SELECT value FROM meta WHERE key='schema_version'")
-      .get()
+      .prepare("SELECT value FROM meta WHERE key='schema_version'")
+      .get() as { value: string } | undefined
     expect(ver?.value).toBe(String(CURRENT_SCHEMA_VERSION))
 
     db2.close()
@@ -102,15 +99,15 @@ describe("db module", () => {
     const db = initDb(p)
 
     withTransaction((d) => {
-      d.run(
+      d.prepare(
         "INSERT INTO accounts (name, account_type, created_at) "
           + "VALUES ('a', 'individual', 1)",
-      )
+      ).run()
     })
 
-    const row = db
-      .query<{ name: string }, []>("SELECT name FROM accounts WHERE name='a'")
-      .get()
+    const row = db.prepare("SELECT name FROM accounts WHERE name='a'").get() as
+      | { name: string }
+      | undefined
     expect(row?.name).toBe("a")
 
     db.close()
@@ -123,18 +120,18 @@ describe("db module", () => {
 
     expect(() =>
       withTransaction((d) => {
-        d.run(
+        d.prepare(
           "INSERT INTO accounts (name, account_type, created_at) "
             + "VALUES ('b', 'individual', 1)",
-        )
+        ).run()
         throw new Error("boom")
       }),
     ).toThrow("boom")
 
-    const row = db
-      .query<{ name: string }, []>("SELECT name FROM accounts WHERE name='b'")
-      .get()
-    expect(row).toBeNull()
+    const row = db.prepare("SELECT name FROM accounts WHERE name='b'").get() as
+      | { name: string }
+      | undefined
+    expect(row).toBeUndefined()
 
     db.close()
     fs.unlinkSync(p)
@@ -143,10 +140,21 @@ describe("db module", () => {
   test("WAL mode is enabled", () => {
     const p = tmpDbPath()
     const db = initDb(p)
-    const mode = db
-      .query<{ journal_mode: string }, []>("PRAGMA journal_mode")
-      .get()
-    expect(mode?.journal_mode.toLowerCase()).toBe("wal")
+    const mode = db.pragma("journal_mode")
+    // bun:sqlite returns { journal_mode: "wal" }, better-sqlite3 returns [{ journal_mode: "wal" }]
+    let val: string
+    if (Array.isArray(mode)) {
+      val = (mode as Array<{ journal_mode: string }>)[0].journal_mode
+    } else if (
+      typeof mode === "object"
+      && mode !== null
+      && "journal_mode" in mode
+    ) {
+      val = (mode as { journal_mode: string }).journal_mode
+    } else {
+      val = String(mode)
+    }
+    expect(val.toLowerCase()).toBe("wal")
     db.close()
     fs.unlinkSync(p)
   })
@@ -154,12 +162,11 @@ describe("db module", () => {
   test("schema includes expected indexes", () => {
     const p = tmpDbPath()
     const db = initDb(p)
-    const idxs = db
-      .query<{ name: string }, []>(
-        "SELECT name FROM sqlite_master WHERE type='index'",
-      )
-      .all()
-      .map((r) => r.name)
+    const idxs = (
+      db
+        .prepare("SELECT name FROM sqlite_master WHERE type='index'")
+        .all() as Array<{ name: string }>
+    ).map((r) => r.name)
     expect(idxs).toContain("idx_usage_account_model_ts")
     expect(idxs).toContain("idx_usage_ts")
     expect(idxs).toContain("idx_pricing_versions_model_time")

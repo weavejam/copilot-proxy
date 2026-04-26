@@ -2,7 +2,7 @@ import { defineCommand } from "citty"
 import consola from "consola"
 import { serve, type ServerHandler } from "srvx"
 
-import { loadAccounts } from "./lib/accounts-loader"
+import { loadAccounts, parseGithubTokenArgs } from "./lib/accounts-loader"
 import { initDb } from "./lib/db"
 import { ensurePaths, PATHS } from "./lib/paths"
 import { runPricingSync } from "./lib/pricing-sync-runner"
@@ -38,13 +38,22 @@ async function bootstrapServer(
   initDb(options.dbPath)
   await cacheVSCodeVersion()
 
-  let legacyToken = options.githubToken
-  if (!options.accountsFile && !legacyToken) {
-    legacyToken = await setupGitHubToken()
+  const multiTokenEntries =
+    options.githubToken?.includes(",") ?
+      parseGithubTokenArgs(options.githubToken, options.accountType)
+    : undefined
+
+  let legacyToken: string | undefined
+  if (!multiTokenEntries && !options.accountsFile) {
+    legacyToken = options.githubToken
+    if (!legacyToken) {
+      legacyToken = await setupGitHubToken()
+    }
   }
 
   const loaded = await loadAccounts({
     accountsFile: options.accountsFile,
+    legacyTokens: multiTokenEntries,
     legacyToken,
     defaultAccountType: options.accountType,
   })
@@ -109,7 +118,8 @@ export const pricingSyncCmd = defineCommand({
     "github-token": {
       alias: "g",
       type: "string",
-      description: "GitHub token",
+      description:
+        "GitHub token(s). Supports comma-separated multi-token format: name:type:token",
     },
     "accounts-file": {
       type: "string",

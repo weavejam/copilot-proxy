@@ -1,6 +1,6 @@
 {
-  "name": "copilot-api",
-  "version": "0.7.0",
+  "name": "@weavejam/copilot-proxy",
+  "version": "0.8.1",
   "description": "Turn GitHub Copilot into OpenAI/Anthropic API compatible server. Usable with Claude Code!",
   "keywords": [
     "proxy",
@@ -13,10 +13,10 @@
     "type": "git",
     "url": "git+https://github.com/ericc-ch/copilot-api.git"
   },
-  "author": "Erick Christian <erickchristian48@gmail.com>",
+  "author": "Bo Lu <lubo@weavejam.com>",
   "type": "module",
   "bin": {
-    "copilot-api": "./dist/main.js"
+    "copilot-proxy": "./dist/main.js"
   },
   "files": [
     "dist"
@@ -40,6 +40,7 @@
     "*": "bun run lint --fix"
   },
   "dependencies": {
+    "better-sqlite3": "^12.9.0",
     "citty": "^0.1.6",
     "clipboardy": "^5.0.0",
     "consola": "^3.4.2",
@@ -54,6 +55,7 @@
   },
   "devDependencies": {
     "@echristian/eslint-config": "^0.0.54",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/bun": "^1.2.23",
     "@types/proxy-from-env": "^1.0.4",
     "bumpp": "^10.2.3",

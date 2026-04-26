@@ -79,11 +79,8 @@ describe("accounts-loader", () => {
     persistAccounts(accounts)
     persistAccounts(accounts) // again — should not error or duplicate
     const rows = db
-      .query<
-        { name: string; account_type: string },
-        []
-      >("SELECT name, account_type FROM accounts")
-      .all()
+      .prepare("SELECT name, account_type FROM accounts")
+      .all() as Array<{ name: string; account_type: string }>
     expect(rows).toHaveLength(1)
     expect(rows[0].name).toBe("default")
     db.close()

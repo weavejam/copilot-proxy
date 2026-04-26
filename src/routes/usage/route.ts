@@ -90,21 +90,21 @@ function fetchPricingMeta(): {
   try {
     const db = getDb()
     const models = db
-      .query<PricingEntry, []>(
+      .prepare(
         `SELECT model_id, input_per_mtok, cached_input_per_mtok,
                 output_per_mtok, reasoning_per_mtok,
                 premium_multiplier, premium_unit_price,
                 source, updated_at
          FROM model_pricing ORDER BY model_id`,
       )
-      .all()
+      .all() as Array<PricingEntry>
     const lastSync =
-      db
-        .query<SyncLogEntry, []>(
+      (db
+        .prepare(
           `SELECT id, ts, status, llm_model, models_updated, models_rejected, error
          FROM pricing_sync_log ORDER BY id DESC LIMIT 1`,
         )
-        .get() ?? null
+        .get() as SyncLogEntry | undefined) ?? null
     return { models, lastSync }
   } catch {
     return { models: [], lastSync: null }

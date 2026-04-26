@@ -42,14 +42,14 @@ interface CurrentRow {
 
 function selectCurrentVersion(modelId: string): CurrentRow | undefined {
   return (
-    getDb()
-      .query<CurrentRow, [string]>(
+    (getDb()
+      .prepare(
         `SELECT id, input_per_mtok, cached_input_per_mtok, output_per_mtok,
               reasoning_per_mtok, premium_multiplier, premium_unit_price
          FROM model_pricing_versions
         WHERE model_id = ? AND effective_to IS NULL`,
       )
-      .get(modelId) ?? undefined
+      .get(modelId) as CurrentRow | undefined) ?? undefined
   )
 }
 
@@ -82,35 +82,33 @@ function applyPricingChange(args: ApplyArgs): "changed" | "unchanged" {
     return "unchanged"
   }
   if (current) {
-    db.run("UPDATE model_pricing_versions SET effective_to = ? WHERE id = ?", [
-      args.detectedAt,
-      current.id,
-    ])
+    db.prepare(
+      "UPDATE model_pricing_versions SET effective_to = ? WHERE id = ?",
+    ).run(args.detectedAt, current.id)
   }
-  db.run(
+  db.prepare(
     `INSERT INTO model_pricing_versions (
        model_id, effective_from, effective_to,
        input_per_mtok, cached_input_per_mtok, output_per_mtok,
        reasoning_per_mtok, premium_multiplier, premium_unit_price,
        currency, source, source_skus, sync_log_id, created_at
      ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      args.row.model_id,
-      args.detectedAt,
-      newRow.input_per_mtok,
-      newRow.cached_input_per_mtok,
-      newRow.output_per_mtok,
-      newRow.reasoning_per_mtok,
-      newRow.premium_multiplier,
-      newRow.premium_unit_price,
-      args.row.currency ?? "USD",
-      args.row.source ?? null,
-      args.row.source_skus ? JSON.stringify(args.row.source_skus) : null,
-      args.syncLogId,
-      args.detectedAt,
-    ],
+  ).run(
+    args.row.model_id,
+    args.detectedAt,
+    newRow.input_per_mtok,
+    newRow.cached_input_per_mtok,
+    newRow.output_per_mtok,
+    newRow.reasoning_per_mtok,
+    newRow.premium_multiplier,
+    newRow.premium_unit_price,
+    args.row.currency ?? "USD",
+    args.row.source ?? null,
+    args.row.source_skus ? JSON.stringify(args.row.source_skus) : null,
+    args.syncLogId,
+    args.detectedAt,
   )
-  db.run(
+  db.prepare(
     `INSERT INTO model_pricing (
        model_id, input_per_mtok, cached_input_per_mtok, output_per_mtok,
        reasoning_per_mtok, premium_multiplier, premium_unit_price,
@@ -127,19 +125,18 @@ function applyPricingChange(args: ApplyArgs): "changed" | "unchanged" {
        source = excluded.source,
        source_skus = excluded.source_skus,
        updated_at = excluded.updated_at`,
-    [
-      args.row.model_id,
-      newRow.input_per_mtok,
-      newRow.cached_input_per_mtok,
-      newRow.output_per_mtok,
-      newRow.reasoning_per_mtok,
-      newRow.premium_multiplier,
-      newRow.premium_unit_price,
-      args.row.currency ?? "USD",
-      args.row.source ?? null,
-      args.row.source_skus ? JSON.stringify(args.row.source_skus) : null,
-      args.detectedAt,
-    ],
+  ).run(
+    args.row.model_id,
+    newRow.input_per_mtok,
+    newRow.cached_input_per_mtok,
+    newRow.output_per_mtok,
+    newRow.reasoning_per_mtok,
+    newRow.premium_multiplier,
+    newRow.premium_unit_price,
+    args.row.currency ?? "USD",
+    args.row.source ?? null,
+    args.row.source_skus ? JSON.stringify(args.row.source_skus) : null,
+    args.detectedAt,
   )
   return "changed"
 }
@@ -218,15 +215,17 @@ export async function runPricingSync(
       })
       if (result === "changed") updated += 1
     }
-    getDb().run(
-      `INSERT INTO meta (key, value) VALUES ('last_pricing_sync_ts', ?)
+    getDb()
+      .prepare(
+        `INSERT INTO meta (key, value) VALUES ('last_pricing_sync_ts', ?)
        ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-      [String(detectedAt)],
-    )
-    getDb().run(
-      "UPDATE pricing_sync_log SET models_updated = ?, source_count = ? WHERE id = ?",
-      [updated, parsed.models.length, logId],
-    )
+      )
+      .run(String(detectedAt))
+    getDb()
+      .prepare(
+        "UPDATE pricing_sync_log SET models_updated = ?, source_count = ? WHERE id = ?",
+      )
+      .run(updated, parsed.models.length, logId)
   })
   tx()
 
@@ -248,7 +247,7 @@ function recordSyncLog(args: RecordSyncLogArgs): number {
        (ts, status, llm_model, models_updated, models_rejected, error)
      VALUES (?, ?, ?, ?, ?, ?)`,
   )
-  stmt.run(
+  const result = stmt.run(
     args.ts,
     args.status,
     args.llmModel,
@@ -256,8 +255,5 @@ function recordSyncLog(args: RecordSyncLogArgs): number {
     args.modelsRejected,
     args.error ?? null,
   )
-  const idRow = getDb()
-    .query<{ id: number }, []>("SELECT last_insert_rowid() AS id")
-    .get()
-  return idRow?.id ?? 0
+  return Number(result.lastInsertRowid)
 }

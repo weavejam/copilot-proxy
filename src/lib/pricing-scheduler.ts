@@ -12,11 +12,8 @@ export interface SchedulePricingSyncOptions {
 function readLastSync(): number {
   try {
     const row = getDb()
-      .query<
-        { value: string },
-        []
-      >("SELECT value FROM meta WHERE key = 'last_pricing_sync_ts'")
-      .get()
+      .prepare("SELECT value FROM meta WHERE key = 'last_pricing_sync_ts'")
+      .get() as { value: string } | undefined
     if (!row) return 0
     return Number.parseInt(row.value, 10) || 0
   } catch {

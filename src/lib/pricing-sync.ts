@@ -132,6 +132,9 @@ Rules:
 - Use USD; if a row is in another currency, convert to USD only if obvious, otherwise omit.
 - "per_mtok" means dollars per 1,000,000 tokens. Convert per-1k or per-token rates accordingly.
 - premium_multiplier and premium_unit_price come from GitHub Copilot premium pricing — do not invent.
+- For Anthropic models, the pricing page lists "Prompt caching" with "Write" and "Read" prices.
+  "Read" is the cached_input_per_mtok. "Write" is the cache-write cost (ignore it — we don't track it).
+  If no caching prices are listed, leave cached_input_per_mtok as null.
 - Leave fields you cannot confidently derive as null. Do not guess.
 - Output a single JSON object. No markdown fences, no commentary.`
 

@@ -20,6 +20,7 @@ export interface AccountsFile {
 export interface LoadAccountsOptions {
   accountsFile?: string
   legacyToken?: string
+  legacyTokens?: Array<AccountsFileEntry>
   defaultAccountType: string
 }
 
@@ -38,6 +39,55 @@ const FRESH = (): Pick<
   failureCount: 0,
 })
 
+/**
+ * Parse a single `--github-token` segment with format `name:type:token`.
+ *
+ * - 1 segment  → pure token, name=`account-{index}`, type=defaultType
+ * - 2 segments → `name:token`, type=defaultType
+ * - 3+ segments → `name:type:token` (token may contain `:`)
+ */
+export function parseGithubTokenArg(
+  raw: string,
+  index: number,
+  defaultType: string,
+): AccountsFileEntry {
+  const parts = raw.split(":")
+  if (parts.length === 1) {
+    return {
+      name: `account-${index + 1}`,
+      github_token: parts[0],
+      account_type: defaultType,
+    }
+  }
+  if (parts.length === 2) {
+    return {
+      name: parts[0],
+      github_token: parts[1],
+      account_type: defaultType,
+    }
+  }
+  // 3+ segments: name:type:token (token may contain colons)
+  return {
+    name: parts[0],
+    account_type: parts[1],
+    github_token: parts.slice(2).join(":"),
+  }
+}
+
+/**
+ * Parse a comma-separated `--github-token` value into multiple account entries.
+ */
+export function parseGithubTokenArgs(
+  raw: string,
+  defaultType: string,
+): Array<AccountsFileEntry> {
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .map((s, i) => parseGithubTokenArg(s, i, defaultType))
+}
+
 export async function loadAccounts(
   options: LoadAccountsOptions,
 ): Promise<Array<Account>> {
@@ -51,6 +101,15 @@ export async function loadAccounts(
         name: e.name,
         accountType: e.account_type ?? options.defaultAccountType,
         githubToken: e.github_token,
+        ...FRESH(),
+      })
+    }
+  } else if (options.legacyTokens && options.legacyTokens.length > 0) {
+    for (const entry of options.legacyTokens) {
+      accounts.push({
+        name: entry.name,
+        accountType: entry.account_type ?? options.defaultAccountType,
+        githubToken: entry.github_token,
         ...FRESH(),
       })
     }

@@ -7,7 +7,11 @@ import { serve, type ServerHandler } from "srvx"
 import invariant from "tiny-invariant"
 
 import { AccountPool, type Strategy } from "./lib/account-pool"
-import { loadAccounts, persistAccounts } from "./lib/accounts-loader"
+import {
+  loadAccounts,
+  parseGithubTokenArgs,
+  persistAccounts,
+} from "./lib/accounts-loader"
 import { initDb } from "./lib/db"
 import { ensurePaths, PATHS } from "./lib/paths"
 import { schedulePricingSync } from "./lib/pricing-scheduler"
@@ -106,16 +110,25 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   initDb(options.dbPath)
   await cacheVSCodeVersion()
 
-  // Resolve legacy single token if no accounts file is provided.
-  let legacyToken = options.githubToken
-  if (!options.accountsFile && !legacyToken) {
-    legacyToken = await setupGitHubToken()
-  } else if (legacyToken) {
-    consola.info("Using provided GitHub token")
+  // Resolve accounts: multi-token CLI → accounts file → single token → interactive
+  const multiTokenEntries =
+    options.githubToken?.includes(",") ?
+      parseGithubTokenArgs(options.githubToken, options.accountType)
+    : undefined
+
+  let legacyToken: string | undefined
+  if (!multiTokenEntries && !options.accountsFile) {
+    legacyToken = options.githubToken
+    if (!legacyToken) {
+      legacyToken = await setupGitHubToken()
+    } else {
+      consola.info("Using provided GitHub token")
+    }
   }
 
   const loaded = await loadAccounts({
     accountsFile: options.accountsFile,
+    legacyTokens: multiTokenEntries,
     legacyToken,
     defaultAccountType: options.accountType,
   })
@@ -216,7 +229,8 @@ export const start = defineCommand({
       alias: "g",
       type: "string",
       description:
-        "Provide GitHub token directly (must be generated using the `auth` subcommand)",
+        "Provide GitHub token(s) directly. Supports comma-separated multi-token format: "
+        + 'name:type:token (e.g. "personal:individual:ghu_aaa,work:business:ghu_bbb")',
     },
     "claude-code": {
       alias: "c",

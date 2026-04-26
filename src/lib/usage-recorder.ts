@@ -44,7 +44,7 @@ export function recordUsage(input: RecordUsageInput): void {
     const ts = Date.now()
 
     const pricing = db
-      .query<PricingRow, [string]>(
+      .prepare(
         `SELECT input_per_mtok,
                 cached_input_per_mtok,
                 output_per_mtok,
@@ -54,7 +54,7 @@ export function recordUsage(input: RecordUsageInput): void {
            FROM model_pricing
           WHERE model_id = ?`,
       )
-      .get(input.modelId)
+      .get(input.modelId) as PricingRow | undefined
 
     const inputPrice = pricing?.input_per_mtok ?? null
     const cachedInputPrice = pricing?.cached_input_per_mtok ?? null

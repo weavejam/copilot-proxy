@@ -20,17 +20,15 @@ const ACCOUNT: Account = {
 function setupDb() {
   __resetDbForTests()
   const db = initDb(":memory:")
-  db.run(
+  db.prepare(
     "INSERT INTO accounts (name, account_type, created_at) VALUES (?, ?, ?)",
-    [ACCOUNT.name, ACCOUNT.accountType, Date.now()],
-  )
-  db.run(
+  ).run(ACCOUNT.name, ACCOUNT.accountType, Date.now())
+  db.prepare(
     `INSERT INTO model_pricing (
         model_id, input_per_mtok, cached_input_per_mtok, output_per_mtok,
         reasoning_per_mtok, premium_multiplier, premium_unit_price, updated_at
      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ["gpt-4o", 2, 0, 8, 0, 1, 0.04, Date.now()],
-  )
+  ).run("gpt-4o", 2, 0, 8, 0, 1, 0.04, Date.now())
   return db
 }
 
@@ -87,10 +85,9 @@ describe("computeUsageStats", () => {
       },
     })
     // Bump live pricing
-    getDb().run(
-      "UPDATE model_pricing SET input_per_mtok = ? WHERE model_id = ?",
-      [10, "gpt-4o"],
-    )
+    getDb()
+      .prepare("UPDATE model_pricing SET input_per_mtok = ? WHERE model_id = ?")
+      .run(10, "gpt-4o")
     const stats = computeUsageStats({
       from: 0,
       to: Date.now() + 1,

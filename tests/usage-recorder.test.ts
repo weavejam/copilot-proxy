@@ -36,10 +36,9 @@ const baseInput = {
 function setupDb() {
   __resetDbForTests()
   const db = initDb(":memory:")
-  db.run(
+  db.prepare(
     "INSERT INTO accounts (name, account_type, created_at) VALUES (?, ?, ?)",
-    [ACCOUNT.name, ACCOUNT.accountType, Date.now()],
-  )
+  ).run(ACCOUNT.name, ACCOUNT.accountType, Date.now())
   return db
 }
 
@@ -50,17 +49,16 @@ describe("recordUsage", () => {
 
   test("inserts an event and a daily row", () => {
     const db = setupDb()
-    db.run(
+    db.prepare(
       `INSERT INTO model_pricing (
          model_id, input_per_mtok, cached_input_per_mtok, output_per_mtok,
          reasoning_per_mtok, premium_multiplier, premium_unit_price,
          updated_at
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      ["gpt-4o", 5, 1, 15, 0, 1.0, 0.04, Date.now()],
-    )
+    ).run("gpt-4o", 5, 1, 15, 0, 1.0, 0.04, Date.now())
     recordUsage(baseInput)
 
-    const events = db.query("SELECT * FROM usage_events").all() as Array<{
+    const events = db.prepare("SELECT * FROM usage_events").all() as Array<{
       account_name: string
       model_id: string
       input_tokens: number
@@ -72,7 +70,7 @@ describe("recordUsage", () => {
     expect(events[0].input_price_snapshot).toBe(5)
     expect(events[0].premium_request_count).toBe(1)
 
-    const daily = db.query("SELECT * FROM usage_daily").all() as Array<{
+    const daily = db.prepare("SELECT * FROM usage_daily").all() as Array<{
       req_count: number
       input_tokens: number
       premium_requests: number
@@ -88,11 +86,8 @@ describe("recordUsage", () => {
     recordUsage(baseInput)
     recordUsage(baseInput)
     const daily = db
-      .query<
-        { req_count: number; input_tokens: number },
-        []
-      >("SELECT req_count, input_tokens FROM usage_daily")
-      .all()
+      .prepare("SELECT req_count, input_tokens FROM usage_daily")
+      .all() as Array<{ req_count: number; input_tokens: number }>
     expect(daily).toHaveLength(1)
     expect(daily[0].req_count).toBe(2)
     expect(daily[0].input_tokens).toBe(200)
@@ -102,11 +97,12 @@ describe("recordUsage", () => {
     const db = setupDb()
     recordUsage(baseInput)
     const ev = db
-      .query<
-        { input_price_snapshot: number | null; premium_request_count: number },
-        []
-      >("SELECT input_price_snapshot, premium_request_count FROM usage_events")
-      .get()
+      .prepare(
+        "SELECT input_price_snapshot, premium_request_count FROM usage_events",
+      )
+      .get() as
+      | { input_price_snapshot: number | null; premium_request_count: number }
+      | undefined
     expect(ev?.input_price_snapshot).toBeNull()
     expect(ev?.premium_request_count).toBe(0)
   })
@@ -114,7 +110,7 @@ describe("recordUsage", () => {
   test("isInternal=true inserts nothing", () => {
     const db = setupDb()
     recordUsage({ ...baseInput, isInternal: true })
-    const events = db.query("SELECT * FROM usage_events").all()
+    const events = db.prepare("SELECT * FROM usage_events").all()
     expect(events).toHaveLength(0)
   })
 

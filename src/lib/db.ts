@@ -1,8 +1,8 @@
-import { Database } from "bun:sqlite"
 import fs from "node:fs"
 import path from "node:path"
 
 import migration001 from "./migrations/001_initial.sql" with { type: "text" }
+import { createDatabase, type DbInstance } from "./sqlite-adapter"
 
 export const CURRENT_SCHEMA_VERSION = 1
 
@@ -10,21 +10,21 @@ const MIGRATIONS: Array<{ version: number; sql: string }> = [
   { version: 1, sql: migration001 },
 ]
 
-let dbInstance: Database | undefined
+let dbInstance: DbInstance | undefined
 
-export function initDb(dbPath: string): Database {
+export function initDb(dbPath: string): DbInstance {
   if (dbInstance) return dbInstance
 
   if (dbPath !== ":memory:") {
     fs.mkdirSync(path.dirname(dbPath), { recursive: true })
   }
 
-  const db = new Database(dbPath, { create: true })
+  const db = createDatabase(dbPath)
 
   // Pragmas — set before any schema work.
-  db.run("PRAGMA journal_mode = WAL")
-  db.run("PRAGMA synchronous = NORMAL")
-  db.run("PRAGMA foreign_keys = ON")
+  db.pragma("journal_mode = WAL")
+  db.pragma("synchronous = NORMAL")
+  db.pragma("foreign_keys = ON")
 
   runMigrations(db)
 
@@ -32,7 +32,7 @@ export function initDb(dbPath: string): Database {
   return db
 }
 
-export function getDb(): Database {
+export function getDb(): DbInstance {
   if (!dbInstance) {
     throw new Error(
       "Database not initialized. Call initDb(path) before getDb().",
@@ -41,7 +41,7 @@ export function getDb(): Database {
   return dbInstance
 }
 
-export function withTransaction<T>(fn: (db: Database) => T): T {
+export function withTransaction<T>(fn: (db: DbInstance) => T): T {
   const db = getDb()
   const tx = db.transaction((arg: () => T) => arg())
   return tx(() => fn(db))
@@ -63,18 +63,15 @@ export function __resetDbForTests(): void {
   }
 }
 
-function runMigrations(db: Database): void {
+function runMigrations(db: DbInstance): void {
   // Bootstrap meta table so we can read schema_version.
-  db.run(
+  db.exec(
     "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
   )
 
   const row = db
-    .query<
-      { value: string },
-      []
-    >("SELECT value FROM meta WHERE key='schema_version'")
-    .get()
+    .prepare("SELECT value FROM meta WHERE key='schema_version'")
+    .get() as { value: string } | undefined
   const currentVersion = row ? Number.parseInt(row.value, 10) : 0
 
   const pending = MIGRATIONS.filter((m) => m.version > currentVersion).sort(
@@ -85,15 +82,14 @@ function runMigrations(db: Database): void {
 
   const apply = db.transaction(() => {
     for (const m of pending) {
-      // Migration SQL contains multiple statements; only exec() handles that.
-      // eslint-disable-next-line @typescript-eslint/no-deprecated
       db.exec(m.sql)
     }
-    db.run(
-      "INSERT INTO meta (key, value) VALUES ('schema_version', ?) "
+    db.prepare(
+      "INSERT INTO meta (key, value) VALUES (?, ?) "
         + "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-      [String(CURRENT_SCHEMA_VERSION)],
-    )
+    ).run("schema_version", String(CURRENT_SCHEMA_VERSION))
   })
   apply()
 }
+
+export { type DbInstance } from "./sqlite-adapter"

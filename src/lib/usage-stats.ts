@@ -1,5 +1,3 @@
-import type { Database } from "bun:sqlite"
-
 import { getDb } from "./db"
 
 export type Lens = "historical" | "current" | "timeline"
@@ -55,30 +53,30 @@ const COST_EXPRESSIONS: Record<Lens, { table: string; cost: string }> = {
   historical: {
     table: "usage_events ue",
     cost: `(
-      ue.input_tokens / 1e6 * ue.input_price_snapshot
-      + ue.cached_input_tokens / 1e6 * ue.cached_input_price_snapshot
-      + ue.output_tokens / 1e6 * ue.output_price_snapshot
-      + ue.reasoning_tokens / 1e6 * ue.reasoning_price_snapshot
+      ue.input_tokens / 1e6 * COALESCE(ue.input_price_snapshot, 0)
+      + ue.cached_input_tokens / 1e6 * COALESCE(ue.cached_input_price_snapshot, 0)
+      + ue.output_tokens / 1e6 * COALESCE(ue.output_price_snapshot, 0)
+      + ue.reasoning_tokens / 1e6 * COALESCE(ue.reasoning_price_snapshot, 0)
     )`,
   },
   current: {
     table:
       "usage_events ue LEFT JOIN model_pricing mp ON mp.model_id = ue.model_id",
     cost: `(
-      ue.input_tokens / 1e6 * mp.input_per_mtok
-      + ue.cached_input_tokens / 1e6 * mp.cached_input_per_mtok
-      + ue.output_tokens / 1e6 * mp.output_per_mtok
-      + ue.reasoning_tokens / 1e6 * mp.reasoning_per_mtok
+      ue.input_tokens / 1e6 * COALESCE(mp.input_per_mtok, 0)
+      + ue.cached_input_tokens / 1e6 * COALESCE(mp.cached_input_per_mtok, 0)
+      + ue.output_tokens / 1e6 * COALESCE(mp.output_per_mtok, 0)
+      + ue.reasoning_tokens / 1e6 * COALESCE(mp.reasoning_per_mtok, 0)
     )`,
   },
   timeline: {
     table:
       "usage_events ue LEFT JOIN model_pricing_versions pv ON pv.model_id = ue.model_id AND ue.ts >= pv.effective_from AND (pv.effective_to IS NULL OR ue.ts < pv.effective_to)",
     cost: `(
-      ue.input_tokens / 1e6 * pv.input_per_mtok
-      + ue.cached_input_tokens / 1e6 * pv.cached_input_per_mtok
-      + ue.output_tokens / 1e6 * pv.output_per_mtok
-      + ue.reasoning_tokens / 1e6 * pv.reasoning_per_mtok
+      ue.input_tokens / 1e6 * COALESCE(pv.input_per_mtok, 0)
+      + ue.cached_input_tokens / 1e6 * COALESCE(pv.cached_input_per_mtok, 0)
+      + ue.output_tokens / 1e6 * COALESCE(pv.output_per_mtok, 0)
+      + ue.reasoning_tokens / 1e6 * COALESCE(pv.reasoning_per_mtok, 0)
     )`,
   },
 }
@@ -219,17 +217,16 @@ function buildByAccount(
 }
 
 export function computeUsageStats(filters: UsageStatsFilters): UsageStats {
-  const db: Database = getDb()
+  const db = getDb()
   const { table, cost } = COST_EXPRESSIONS[filters.lens]
   const filter = buildFilter(filters)
 
   const totalsRow =
-    db
-      .query<
-        AggregateRow,
-        Array<string | number>
-      >(`SELECT ${COMMON_AGGREGATE(cost)} FROM ${table} WHERE ${filter.sql}`)
-      .get(...filter.params)
+    (db
+      .prepare(
+        `SELECT ${COMMON_AGGREGATE(cost)} FROM ${table} WHERE ${filter.sql}`,
+      )
+      .get(...filter.params) as AggregateRow | undefined)
     ?? ({
       input_tokens: 0,
       cached_input_tokens: 0,
@@ -241,27 +238,27 @@ export function computeUsageStats(filters: UsageStatsFilters): UsageStats {
     } as AggregateRow)
 
   const byAccountRows = db
-    .query<ByAccountRow, Array<string | number>>(
+    .prepare(
       `SELECT ue.account_name, ${COMMON_AGGREGATE(cost)}
        FROM ${table}
        WHERE ${filter.sql}
        GROUP BY ue.account_name
        ORDER BY ue.account_name`,
     )
-    .all(...filter.params)
+    .all(...filter.params) as Array<ByAccountRow>
 
   const byAccountModelRows = db
-    .query<ByAccountModelRow, Array<string | number>>(
+    .prepare(
       `SELECT ue.account_name, ue.model_id, ue.endpoint, ${COMMON_AGGREGATE(cost)}
        FROM ${table}
        WHERE ${filter.sql}
        GROUP BY ue.account_name, ue.model_id, ue.endpoint
        ORDER BY ue.account_name, ue.model_id, ue.endpoint`,
     )
-    .all(...filter.params)
+    .all(...filter.params) as Array<ByAccountModelRow>
 
   const dailyRows = db
-    .query<DailyRow, Array<string | number>>(
+    .prepare(
       `SELECT date(ue.ts/1000, 'unixepoch', 'localtime') AS day,
               ue.account_name, ue.model_id, ${COMMON_AGGREGATE(cost)}
        FROM ${table}
@@ -269,16 +266,17 @@ export function computeUsageStats(filters: UsageStatsFilters): UsageStats {
        GROUP BY day, ue.account_name, ue.model_id
        ORDER BY day, ue.account_name, ue.model_id`,
     )
-    .all(...filter.params)
+    .all(...filter.params) as Array<DailyRow>
 
-  const missing = db
-    .query<{ model_id: string }, [number, number]>(
-      `SELECT DISTINCT model_id FROM usage_events
+  const missing = (
+    db
+      .prepare(
+        `SELECT DISTINCT model_id FROM usage_events
        WHERE model_id NOT IN (SELECT model_id FROM model_pricing)
          AND ts BETWEEN ? AND ?`,
-    )
-    .all(filters.from, filters.to)
-    .map((r) => r.model_id)
+      )
+      .all(filters.from, filters.to) as Array<{ model_id: string }>
+  ).map((r) => r.model_id)
 
   return {
     range: { from: filters.from, to: filters.to },
