@@ -41,6 +41,14 @@ interface RunServerOptions {
   pricingSyncDisabled: boolean
 }
 
+/** Citty may return a string or string[] for repeated --github-token flags. Normalize to comma-separated. */
+function normalizeGithubToken(
+  raw: string | Array<string> | undefined,
+): string | undefined {
+  if (!raw) return undefined
+  return Array.isArray(raw) ? raw.join(",") : raw
+}
+
 async function promptClaudeCodeSetup(serverUrl: string): Promise<void> {
   invariant(state.models, "Models should be loaded by now")
 
@@ -297,7 +305,7 @@ export const start = defineCommand({
       manual: args.manual,
       rateLimit,
       rateLimitWait: args.wait,
-      githubToken: args["github-token"],
+      githubToken: normalizeGithubToken(args["github-token"]),
       claudeCode: args["claude-code"],
       showToken: args["show-token"],
       proxyEnv: args["proxy-env"],

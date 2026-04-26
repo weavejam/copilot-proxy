@@ -23,6 +23,13 @@ interface RunPricingSyncCmdOptions {
   verbose: boolean
 }
 
+function normalizeGithubToken(
+  raw: string | Array<string> | undefined,
+): string | undefined {
+  if (!raw) return undefined
+  return Array.isArray(raw) ? raw.join(",") : raw
+}
+
 async function bootstrapServer(
   options: RunPricingSyncCmdOptions,
 ): Promise<void> {
@@ -153,7 +160,7 @@ export const pricingSyncCmd = defineCommand({
     return runPricingSyncCmd({
       port: Number.parseInt(args.port, 10),
       syncModel: args["sync-model"],
-      githubToken: args["github-token"],
+      githubToken: normalizeGithubToken(args["github-token"]),
       accountsFile: args["accounts-file"],
       accountType: args["account-type"],
       dbPath: args["db-path"],
