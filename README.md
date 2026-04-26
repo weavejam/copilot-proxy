@@ -85,24 +85,33 @@ npx @weavejam/copilot-proxy@latest start --github-token ghu_YOUR_TOKEN
 
 ### Multi-Token CLI
 
-Pass multiple tokens in a single `--github-token` flag using comma-separated `name:type:token` format:
+Pass multiple tokens using `--github-token` with `name:type:token` format. Both repeated flags and comma-separated values are supported:
 
 ```sh
-# Full format: name:type:token
+# Repeated flags (recommended for readability)
+npx @weavejam/copilot-proxy@latest start \
+  --github-token personal:individual:ghu_aaa \
+  --github-token work:business:ghu_bbb
+
+# Comma-separated in a single flag
 npx @weavejam/copilot-proxy@latest start \
   --github-token "personal:individual:ghu_aaa,work:business:ghu_bbb"
 
 # Omit type (defaults to individual): name:token
 npx @weavejam/copilot-proxy@latest start \
-  --github-token "personal:ghu_aaa,work:ghu_bbb"
+  --github-token personal:ghu_aaa \
+  --github-token work:ghu_bbb
 
-# Pure tokens (auto-named account-1, account-2): token
+# Pure tokens (auto-named account-1, account-2)
 npx @weavejam/copilot-proxy@latest start \
-  --github-token "ghu_aaa,ghu_bbb"
+  --github-token ghu_aaa \
+  --github-token ghu_bbb
 
 # Mixed formats work too
 npx @weavejam/copilot-proxy@latest start \
-  --github-token "ghu_bare,named:ghu_two,full:business:ghu_three"
+  --github-token ghu_bare \
+  --github-token named:ghu_two \
+  --github-token full:business:ghu_three
 ```
 
 ### Accounts File
@@ -266,7 +275,7 @@ npx @weavejam/copilot-proxy@latest check-usage
 | `--port` | Port to listen on | 4141 | `-p` |
 | `--verbose` | Enable verbose logging | false | `-v` |
 | `--account-type` | Account type (individual, business, enterprise) | individual | `-a` |
-| `--github-token` | GitHub token(s), supports `name:type:token` comma-separated format | — | `-g` |
+| `--github-token` | GitHub token(s), supports repeated flags or comma-separated `name:type:token` | — | `-g` |
 | `--accounts-file` | Path to accounts JSON file | — | — |
 | `--strategy` | Load balancing: round-robin, least-busy, least-recent | round-robin | — |
 | `--rate-limit` | Minimum seconds between requests | — | `-r` |
@@ -384,4 +393,4 @@ All data is stored in `~/.local/share/copilot-api/`:
 - Use `--rate-limit 30 --wait` to throttle requests and queue them instead of erroring.
 - Use `--manual` to approve each request individually — useful for debugging or auditing.
 - Use `--account-type business` or `enterprise` if your Copilot subscription is through an organization. See the [official docs](https://docs.github.com/en/enterprise-cloud@latest/copilot/managing-copilot/managing-github-copilot-in-your-organization/managing-access-to-github-copilot-in-your-organization/managing-github-copilot-access-to-your-organizations-network#configuring-copilot-subscription-based-network-routing-for-your-enterprise-or-organization).
-- Multi-token CLI (`--github-token "a:individual:ghu_x,b:business:ghu_y"`) is a quick alternative to accounts files for CI/CD or one-off use.
+- Multi-token CLI supports both repeated flags (`--github-token a:ghu_x --github-token b:ghu_y`) and comma-separated (`--github-token "a:ghu_x,b:ghu_y"`). Great for CI/CD or one-off use without an accounts file.
