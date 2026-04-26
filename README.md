@@ -279,6 +279,9 @@ npx @weavejam/copilot-proxy@latest check-usage
 | `--pricing-sync-model` | Model for LLM pricing extraction | auto | — |
 | `--pricing-sync-interval-days` | Days between automatic pricing syncs | 7 | — |
 | `--pricing-sync-disabled` | Disable automatic pricing sync | false | — |
+| `--record-requests` | Enable HTTP request/response recording to disk | false | — |
+| `--record-dir` | Directory for recorded data | `~/.local/share/copilot-api/logs` | — |
+| `--record-parts` | Comma-separated parts to record (see below) | all | — |
 
 ### `auth add` Options
 
@@ -312,6 +315,55 @@ npx @weavejam/copilot-proxy@latest check-usage
 | Option | Description | Default |
 | --- | --- | --- |
 | `--json` | Output as JSON | false |
+
+## Request Recording
+
+Record HTTP requests and responses to disk for debugging or analyzing API usage patterns (e.g., studying how Claude Code calls the API).
+
+Recording is **disabled by default** — enable it with `--record-requests`:
+
+```sh
+# Record everything (request/response headers and bodies)
+npx @weavejam/copilot-proxy@latest start --record-requests
+
+# Record only request headers and bodies
+npx @weavejam/copilot-proxy@latest start --record-requests --record-parts req-header,req-body
+
+# Record only response data
+npx @weavejam/copilot-proxy@latest start --record-requests --record-parts res-header,res-body
+
+# Custom output directory
+npx @weavejam/copilot-proxy@latest start --record-requests --record-dir ./my-logs
+```
+
+**Available parts** for `--record-parts` (comma-separated):
+
+| Part | Description |
+| --- | --- |
+| `req-header` | Request method, URL, and headers |
+| `req-body` | Request body (JSON pretty-printed) |
+| `res-header` | Response status and headers |
+| `res-body` | Response body (JSON pretty-printed) |
+
+**Directory structure**: Recordings are organized by minute, with each request in its own subdirectory:
+
+```
+logs/
+  20260426_143500/           # minute bucket
+    1714142100123_POST_v1%2Fmessages/
+      request_headers.json
+      request_body.json
+      response_headers.json
+      response_body.json
+    1714142105456_GET_v1%2Fmodels/
+      request_headers.json
+      response_headers.json
+      response_body.json
+  20260426_143600/
+    ...
+```
+
+> **Note**: Authorization headers are automatically redacted in recorded files.
 
 ## Docker
 
@@ -377,6 +429,7 @@ All data is stored in `~/.local/share/copilot-api/`:
 | `github_token` | Stored GitHub OAuth token |
 | `accounts.json` | Multi-account configuration |
 | `usage.sqlite` | Usage tracking and pricing data |
+| `logs/` | Request recordings (when `--record-requests` enabled) |
 
 ## Usage Tips
 
