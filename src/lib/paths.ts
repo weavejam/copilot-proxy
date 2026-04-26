@@ -8,11 +8,14 @@ const GITHUB_TOKEN_PATH = path.join(APP_DIR, "github_token")
 const USAGE_DB_PATH = path.join(APP_DIR, "usage.sqlite")
 const ACCOUNTS_FILE_PATH = path.join(APP_DIR, "accounts.json")
 
+const HEADER_LOG_PATH = path.join(APP_DIR, "headers.log")
+
 export const PATHS = {
   APP_DIR,
   GITHUB_TOKEN_PATH,
   USAGE_DB_PATH,
   ACCOUNTS_FILE_PATH,
+  HEADER_LOG_PATH,
 }
 
 export async function ensurePaths(): Promise<void> {
