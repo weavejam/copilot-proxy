@@ -16,12 +16,12 @@ import { initDb } from "./lib/db"
 import { ensurePaths, PATHS } from "./lib/paths"
 import { schedulePricingSync } from "./lib/pricing-scheduler"
 import { initProxyFromEnv } from "./lib/proxy"
-import { parseRecordParts, requestRecorder } from "./lib/request-recorder"
+import { parseRecordParts } from "./lib/request-recorder"
 import { generateEnvScript } from "./lib/shell"
 import { state } from "./lib/state"
 import { setupCopilotTokenFor, setupGitHubToken } from "./lib/token"
 import { cacheModels, cacheVSCodeVersion } from "./lib/utils"
-import { server } from "./server"
+import { createServer } from "./server"
 
 interface RunServerOptions {
   port: number
@@ -182,17 +182,17 @@ export async function runServer(options: RunServerOptions): Promise<void> {
     `🌐 Usage Viewer: https://ericc-ch.github.io/copilot-api?endpoint=${serverUrl}/usage`,
   )
 
-  // Conditionally enable request recording
-  if (options.recordRequests) {
-    const parts = parseRecordParts(options.recordParts)
-    server.use(
-      requestRecorder({
-        logDir: options.recordDir,
-        ...parts,
-      }),
-    )
+  // Create server with optional request recording
+  const recorderOpts =
+    options.recordRequests ?
+      { logDir: options.recordDir, ...parseRecordParts(options.recordParts) }
+    : undefined
+
+  if (recorderOpts) {
     consola.info(`Request recording enabled → ${options.recordDir}`)
   }
+
+  const server = createServer({ recorder: recorderOpts })
 
   serve({
     fetch: server.fetch as ServerHandler,

@@ -10,7 +10,7 @@ import { initProxyFromEnv } from "./lib/proxy"
 import { state } from "./lib/state"
 import { setupCopilotTokenFor, setupGitHubToken } from "./lib/token"
 import { cacheModels, cacheVSCodeVersion } from "./lib/utils"
-import { server } from "./server"
+import { createServer } from "./server"
 
 interface RunPricingSyncCmdOptions {
   port: number
@@ -74,7 +74,7 @@ async function bootstrapServer(
 
 function startTempServer(port: number): void {
   serve({
-    fetch: server.fetch as ServerHandler,
+    fetch: createServer().fetch as ServerHandler,
     port,
   })
 }
