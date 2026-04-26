@@ -1,0 +1,2 @@
+# Force LF line endings everywhere (cross-platform consistency)
+* text=auto eol=lf
