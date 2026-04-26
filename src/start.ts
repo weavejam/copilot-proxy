@@ -16,6 +16,7 @@ import { initDb } from "./lib/db"
 import { ensurePaths, PATHS } from "./lib/paths"
 import { schedulePricingSync } from "./lib/pricing-scheduler"
 import { initProxyFromEnv } from "./lib/proxy"
+import { parseRecordParts, requestRecorder } from "./lib/request-recorder"
 import { generateEnvScript } from "./lib/shell"
 import { state } from "./lib/state"
 import { setupCopilotTokenFor, setupGitHubToken } from "./lib/token"
@@ -39,6 +40,9 @@ interface RunServerOptions {
   pricingSyncModel?: string
   pricingSyncIntervalDays: number
   pricingSyncDisabled: boolean
+  recordRequests: boolean
+  recordDir: string
+  recordParts: string
 }
 
 /** Citty may return a string or string[] for repeated --github-token flags. Normalize to comma-separated. */
@@ -93,6 +97,7 @@ async function promptClaudeCodeSetup(serverUrl: string): Promise<void> {
   }
 }
 
+// eslint-disable-next-line complexity
 export async function runServer(options: RunServerOptions): Promise<void> {
   if (options.proxyEnv) {
     initProxyFromEnv()
@@ -176,6 +181,18 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   consola.box(
     `🌐 Usage Viewer: https://ericc-ch.github.io/copilot-api?endpoint=${serverUrl}/usage`,
   )
+
+  // Conditionally enable request recording
+  if (options.recordRequests) {
+    const parts = parseRecordParts(options.recordParts)
+    server.use(
+      requestRecorder({
+        logDir: options.recordDir,
+        ...parts,
+      }),
+    )
+    consola.info(`Request recording enabled → ${options.recordDir}`)
+  }
 
   serve({
     fetch: server.fetch as ServerHandler,
@@ -288,6 +305,23 @@ export const start = defineCommand({
       default: false,
       description: "Disable automatic background pricing sync",
     },
+    "record-requests": {
+      type: "boolean",
+      default: false,
+      description: "Enable recording of HTTP requests and responses to disk",
+    },
+    "record-dir": {
+      type: "string",
+      default: PATHS.RECORD_DIR,
+      description:
+        "Directory for recorded request data (default: ~/.local/share/copilot-api/logs)",
+    },
+    "record-parts": {
+      type: "string",
+      default: "req-header,req-body,res-header,res-body",
+      description:
+        "Comma-separated parts to record: req-header, req-body, res-header, res-body",
+    },
   },
   run({ args }) {
     const rateLimitRaw = args["rate-limit"]
@@ -315,6 +349,9 @@ export const start = defineCommand({
         10,
       ),
       pricingSyncDisabled: args["pricing-sync-disabled"],
+      recordRequests: args["record-requests"],
+      recordDir: args["record-dir"],
+      recordParts: args["record-parts"],
     })
   },
 })

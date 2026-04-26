@@ -8,7 +8,7 @@ export default defineConfig({
   target: "es2022",
   platform: "node",
 
-  sourcemap: true,
+  sourcemap: false,
   clean: true,
   removeNodeProtocol: false,
 

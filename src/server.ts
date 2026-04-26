@@ -2,7 +2,6 @@ import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { logger } from "hono/logger"
 
-import { headerLogger } from "./lib/header-logger"
 import { completionRoutes } from "./routes/chat-completions/route"
 import { embeddingRoutes } from "./routes/embeddings/route"
 import { messageRoutes } from "./routes/messages/route"
@@ -14,7 +13,6 @@ export const server = new Hono()
 
 server.use(logger())
 server.use(cors())
-server.use(headerLogger())
 
 server.get("/", (c) => c.text("Server running"))
 
