@@ -2,6 +2,8 @@ import consola from "consola"
 import fs from "node:fs/promises"
 import path from "node:path"
 
+import { detectAccountInfo } from "~/services/github/detect-account-info"
+
 import type { Account } from "./account-pool"
 
 import { getDb } from "./db"
@@ -40,52 +42,74 @@ const FRESH = (): Pick<
 })
 
 /**
- * Parse a single `--github-token` segment with format `name:type:token`.
+ * Parse a single `--github-token` segment.
  *
- * - 1 segment  → pure token, name=`account-{index}`, type=defaultType
- * - 2 segments → `name:token`, type=defaultType
- * - 3+ segments → `name:type:token` (token may contain `:`)
+ * - 1 segment  → pure token, name=`account-{index}`, type auto-detected later
+ * - 2+ segments → `name:token` (token may contain `:`)
  */
 export function parseGithubTokenArg(
   raw: string,
   index: number,
-  defaultType: string,
 ): AccountsFileEntry {
-  const parts = raw.split(":")
-  if (parts.length === 1) {
+  const idx = raw.indexOf(":")
+  if (idx === -1) {
     return {
       name: `account-${index + 1}`,
-      github_token: parts[0],
-      account_type: defaultType,
+      github_token: raw,
     }
   }
-  if (parts.length === 2) {
-    return {
-      name: parts[0],
-      github_token: parts[1],
-      account_type: defaultType,
-    }
-  }
-  // 3+ segments: name:type:token (token may contain colons)
   return {
-    name: parts[0],
-    account_type: parts[1],
-    github_token: parts.slice(2).join(":"),
+    name: raw.slice(0, idx),
+    github_token: raw.slice(idx + 1),
   }
 }
 
 /**
  * Parse a comma-separated `--github-token` value into multiple account entries.
  */
-export function parseGithubTokenArgs(
-  raw: string,
-  defaultType: string,
-): Array<AccountsFileEntry> {
+export function parseGithubTokenArgs(raw: string): Array<AccountsFileEntry> {
   return raw
     .split(",")
     .map((s) => s.trim())
     .filter((s) => s.length > 0)
-    .map((s, i) => parseGithubTokenArg(s, i, defaultType))
+    .map((s, i) => parseGithubTokenArg(s, i))
+}
+
+/**
+ * Auto-detect account type and username for entries missing them.
+ * Mutates entries in-place. Runs detections in parallel.
+ */
+async function enrichWithDetection(
+  entries: Array<AccountsFileEntry>,
+): Promise<void> {
+  const results = await Promise.all(
+    entries.map((e) => detectAccountInfo(e.github_token)),
+  )
+  for (const [i, entry] of entries.entries()) {
+    const info = results[i]
+
+    // Auto-fill account type
+    if (!entry.account_type) {
+      entry.account_type = info.accountType
+    }
+
+    // Replace auto-generated name with GitHub username
+    if (entry.name.startsWith("account-")) {
+      entry.name = info.login
+    }
+
+    consola.info(`[${entry.name}] detected as ${entry.account_type} account`)
+  }
+
+  // Deduplicate names by appending suffix
+  const seen = new Map<string, number>()
+  for (const entry of entries) {
+    const count = seen.get(entry.name) ?? 0
+    if (count > 0) {
+      entry.name = `${entry.name}-${count + 1}`
+    }
+    seen.set(entry.name, count + 1)
+  }
 }
 
 export async function loadAccounts(
@@ -105,6 +129,8 @@ export async function loadAccounts(
       })
     }
   } else if (options.legacyTokens && options.legacyTokens.length > 0) {
+    // Auto-detect account type and username for CLI tokens
+    await enrichWithDetection(options.legacyTokens)
     for (const entry of options.legacyTokens) {
       accounts.push({
         name: entry.name,

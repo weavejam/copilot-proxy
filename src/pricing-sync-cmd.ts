@@ -49,10 +49,7 @@ async function bootstrapServer(
   let multiTokenEntries: ReturnType<typeof parseGithubTokenArgs> | undefined
 
   if (options.githubToken && !options.accountsFile) {
-    multiTokenEntries = parseGithubTokenArgs(
-      options.githubToken,
-      options.accountType,
-    )
+    multiTokenEntries = parseGithubTokenArgs(options.githubToken)
   }
 
   if (!multiTokenEntries?.length && !options.accountsFile) {

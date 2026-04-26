@@ -123,10 +123,7 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   let multiTokenEntries: ReturnType<typeof parseGithubTokenArgs> | undefined
 
   if (options.githubToken && !options.accountsFile) {
-    multiTokenEntries = parseGithubTokenArgs(
-      options.githubToken,
-      options.accountType,
-    )
+    multiTokenEntries = parseGithubTokenArgs(options.githubToken)
     if (multiTokenEntries.length > 0) {
       consola.info("Using provided GitHub token(s)")
     }

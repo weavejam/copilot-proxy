@@ -34,7 +34,7 @@ A reverse-engineered proxy for the GitHub Copilot API that exposes it as an **Op
 - **OpenAI & Anthropic Compatible API** — `/v1/chat/completions`, `/v1/models`, `/v1/embeddings`, `/v1/messages`, `/v1/messages/count_tokens`
 - **Claude Code Integration** — One-command setup with `--claude-code`, or manual `settings.json` configuration
 - **Multi-Account & Load Balancing** — Configure multiple GitHub accounts with round-robin, least-busy, or least-recent strategies
-- **Multi-Token CLI** — Pass multiple tokens directly on the command line with `name:type:token` format, no accounts file needed
+- **Multi-Token CLI** — Pass multiple tokens directly on the command line, account type and username auto-detected
 - **Usage Tracking & Dashboard** — Built-in SQLite database tracks per-model token usage and costs; web dashboard at `/usage`
 - **Automatic Pricing Sync** — Periodically fetches model pricing from Azure and Anthropic to calculate accurate cost estimates
 - **Rate Limiting** — Configurable request throttling with optional wait mode
@@ -85,34 +85,25 @@ npx @weavejam/copilot-proxy@latest start --github-token ghu_YOUR_TOKEN
 
 ### Multi-Token CLI
 
-Pass multiple tokens using `--github-token` with `name:type:token` format. Both repeated flags and comma-separated values are supported:
+Pass multiple tokens using `--github-token`. Account type and username are **auto-detected** from each token via the GitHub API. Both repeated flags and comma-separated values are supported:
 
 ```sh
-# Repeated flags (recommended for readability)
-npx @weavejam/copilot-proxy@latest start \
-  --github-token personal:individual:ghu_aaa \
-  --github-token work:business:ghu_bbb
-
-# Comma-separated in a single flag
-npx @weavejam/copilot-proxy@latest start \
-  --github-token "personal:individual:ghu_aaa,work:business:ghu_bbb"
-
-# Omit type (defaults to individual): name:token
-npx @weavejam/copilot-proxy@latest start \
-  --github-token personal:ghu_aaa \
-  --github-token work:ghu_bbb
-
-# Pure tokens (auto-named account-1, account-2)
+# Multiple tokens — username and account type auto-detected
 npx @weavejam/copilot-proxy@latest start \
   --github-token ghu_aaa \
   --github-token ghu_bbb
 
-# Mixed formats work too
+# With custom account names: name:token
 npx @weavejam/copilot-proxy@latest start \
-  --github-token ghu_bare \
-  --github-token named:ghu_two \
-  --github-token full:business:ghu_three
+  --github-token personal:ghu_aaa \
+  --github-token work:ghu_bbb
+
+# Comma-separated in a single flag
+npx @weavejam/copilot-proxy@latest start \
+  --github-token "ghu_aaa,work:ghu_bbb"
 ```
+
+Format: `token` or `name:token`. If no name is given, the GitHub username is used automatically. Account type (individual/business/enterprise) is always auto-detected — no need to specify it.
 
 ### Accounts File
 
@@ -134,11 +125,11 @@ npx @weavejam/copilot-proxy@latest start --accounts-file ./accounts.json
 ### Account Management Commands
 
 ```sh
-# Add account interactively (auto-detects GitHub username)
+# Add account interactively (auto-detects GitHub username and account type)
 npx @weavejam/copilot-proxy@latest auth add
 
-# Add with explicit name and type
-npx @weavejam/copilot-proxy@latest auth add --name work --account-type business
+# Add with explicit name
+npx @weavejam/copilot-proxy@latest auth add --name work
 
 # List all configured accounts
 npx @weavejam/copilot-proxy@latest auth list
@@ -275,7 +266,7 @@ npx @weavejam/copilot-proxy@latest check-usage
 | `--port` | Port to listen on | 4141 | `-p` |
 | `--verbose` | Enable verbose logging | false | `-v` |
 | `--account-type` | Account type (individual, business, enterprise) | individual | `-a` |
-| `--github-token` | GitHub token(s), supports repeated flags or comma-separated `name:type:token` | — | `-g` |
+| `--github-token` | GitHub token(s), supports repeated flags or comma-separated `name:token` (type auto-detected) | — | `-g` |
 | `--accounts-file` | Path to accounts JSON file | — | — |
 | `--strategy` | Load balancing: round-robin, least-busy, least-recent | round-robin | — |
 | `--rate-limit` | Minimum seconds between requests | — | `-r` |
@@ -294,7 +285,6 @@ npx @weavejam/copilot-proxy@latest check-usage
 | Option | Description | Default | Alias |
 | --- | --- | --- | --- |
 | `--name` | Account name (defaults to GitHub username) | auto | `-n` |
-| `--account-type` | Account type | individual | `-a` |
 | `--verbose` | Verbose logging | false | `-v` |
 
 ### `auth remove` Options
@@ -393,4 +383,4 @@ All data is stored in `~/.local/share/copilot-api/`:
 - Use `--rate-limit 30 --wait` to throttle requests and queue them instead of erroring.
 - Use `--manual` to approve each request individually — useful for debugging or auditing.
 - Use `--account-type business` or `enterprise` if your Copilot subscription is through an organization. See the [official docs](https://docs.github.com/en/enterprise-cloud@latest/copilot/managing-copilot/managing-github-copilot-in-your-organization/managing-access-to-github-copilot-in-your-organization/managing-github-copilot-access-to-your-organizations-network#configuring-copilot-subscription-based-network-routing-for-your-enterprise-or-organization).
-- Multi-token CLI supports both repeated flags (`--github-token a:ghu_x --github-token b:ghu_y`) and comma-separated (`--github-token "a:ghu_x,b:ghu_y"`). Great for CI/CD or one-off use without an accounts file.
+- Multi-token CLI supports both repeated flags (`--github-token ghu_x --github-token ghu_y`) and comma-separated (`--github-token "ghu_x,ghu_y"`). Account type and username are auto-detected.

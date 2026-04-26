@@ -5,55 +5,32 @@ import { addAccountEntry } from "./lib/accounts-loader"
 import { ensurePaths } from "./lib/paths"
 import { state } from "./lib/state"
 import { runDeviceFlow } from "./lib/token"
-import { getGitHubUser } from "./services/github/get-user"
+import { detectAccountInfo } from "./services/github/detect-account-info"
 
 interface RunAuthAddOptions {
   name?: string
-  accountType: string
   verbose: boolean
-}
-
-async function resolveAccountName(
-  token: string,
-  explicitName?: string,
-): Promise<string> {
-  if (explicitName) return explicitName
-  try {
-    const user = await getGitHubUser({
-      account: {
-        name: "_probe",
-        accountType: state.accountType,
-        githubToken: token,
-        copilotTokenRefreshAt: 0,
-        inFlight: 0,
-        lastUsedAt: 0,
-        failureCount: 0,
-      },
-      vsCodeVersion: state.vsCodeVersion,
-    })
-    consola.info(`Detected GitHub user: ${user.login}`)
-    return user.login
-  } catch {
-    consola.warn("Could not detect GitHub username, using 'default'")
-    return "default"
-  }
 }
 
 export async function runAuthAdd(options: RunAuthAddOptions): Promise<void> {
   if (options.verbose) {
     consola.level = 5
   }
-  state.accountType = options.accountType
   await ensurePaths()
 
   consola.info("Starting GitHub Device Flow authentication…")
   const token = await runDeviceFlow()
 
-  const name = await resolveAccountName(token, options.name)
+  const info = await detectAccountInfo(token)
+  const name = options.name ?? info.login
+  state.accountType = info.accountType
+
+  consola.info(`Detected GitHub user: ${info.login} (${info.accountType})`)
+
   await addAccountEntry({
     name,
     github_token: token,
-    account_type: options.accountType,
+    account_type: info.accountType,
   })
 }
 
@@ -68,12 +45,6 @@ export const authAdd = defineCommand({
       type: "string",
       description: "Account name (defaults to GitHub username if not provided)",
     },
-    "account-type": {
-      alias: "a",
-      type: "string",
-      default: "individual",
-      description: "Account type (individual, business, enterprise)",
-    },
     verbose: {
       alias: "v",
       type: "boolean",
@@ -84,7 +55,6 @@ export const authAdd = defineCommand({
   run({ args }) {
     return runAuthAdd({
       name: args.name,
-      accountType: args["account-type"],
       verbose: args.verbose,
     })
   },
