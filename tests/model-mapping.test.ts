@@ -1,5 +1,7 @@
-import { describe, expect, test } from "bun:test"
 import type { Context } from "hono"
+
+import { describe, expect, test } from "bun:test"
+
 import type { Model } from "~/services/copilot/get-models"
 
 import {
@@ -53,33 +55,21 @@ describe("model mapping", () => {
   })
 
   test("uses exact match before fuzzy matching", () => {
-    const models = makeModels([
-      "claude-opus-4.6",
-      "claude-sonnet-4.5",
-      "auto",
-    ])
+    const models = makeModels(["claude-opus-4.6", "claude-sonnet-4.5", "auto"])
     expect(mapModelIdToAvailableModels("claude-opus-4.6", models)).toBe(
       "claude-opus-4.6",
     )
   })
 
   test("uses fuzzy match when exact model is missing", () => {
-    const models = makeModels([
-      "claude-opus-4.6",
-      "claude-sonnet-4.5",
-      "auto",
-    ])
+    const models = makeModels(["claude-opus-4.6", "claude-sonnet-4.5", "auto"])
     expect(mapModelIdToAvailableModels("claude-opus-4-6", models)).toBe(
       "claude-opus-4.6",
     )
   })
 
   test("falls back to auto-version model when no fuzzy match", () => {
-    const models = makeModels([
-      "claude-opus-4.6",
-      "auto",
-      "gpt-4o",
-    ])
+    const models = makeModels(["claude-opus-4.6", "auto", "gpt-4o"])
     expect(mapModelIdToAvailableModels("nonexistent-model", models)).toBe(
       "auto",
     )

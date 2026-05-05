@@ -89,7 +89,7 @@ function streamAndRecord(
     let lastRequestId: string | undefined
     try {
       for await (const rawEvent of response) {
-        if (c.req.raw.signal.aborted) {
+        if (stream.aborted) {
           status = "aborted"
           break
         }

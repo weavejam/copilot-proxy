@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-require-imports, unicorn/prefer-module, @typescript-eslint/no-unnecessary-type-parameters */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-require-imports, unicorn/prefer-module */
 /**
  * Runtime-adaptive SQLite adapter.
  *
@@ -16,9 +16,7 @@ export interface DbInstance {
   prepare(sql: string): DbStatement
   exec(sql: string): void
   pragma(pragma: string): unknown
-  transaction<T>(
-    fn: (...args: Array<unknown>) => T,
-  ): (...args: Array<unknown>) => T
+  transaction<F extends (...args: Array<never>) => unknown>(fn: F): F
   close(): void
 }
 
@@ -66,7 +64,7 @@ function createBunDatabase(dbPath: string): DbInstance {
       }
       return db.query(`PRAGMA ${pragma}`).get()
     },
-    transaction<T>(fn: (...args: Array<unknown>) => T) {
+    transaction<F extends (...args: Array<never>) => unknown>(fn: F): F {
       return db.transaction(fn)
     },
     close() {
@@ -100,7 +98,7 @@ function createBetterSqlite3Database(dbPath: string): DbInstance {
     pragma(pragma: string) {
       return db.pragma(pragma)
     },
-    transaction<T>(fn: (...args: Array<unknown>) => T) {
+    transaction<F extends (...args: Array<never>) => unknown>(fn: F): F {
       return db.transaction(fn)
     },
     close() {

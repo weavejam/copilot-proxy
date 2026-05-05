@@ -1,12 +1,13 @@
-import consola from "consola"
 import type { Context } from "hono"
+
+import consola from "consola"
 
 import type { Account } from "~/lib/account-pool"
 import type { ApiContext } from "~/lib/api-config"
+import type { Model } from "~/services/copilot/get-models"
 
 import { getModels } from "~/services/copilot/get-models"
 import { getVSCodeVersion } from "~/services/get-vscode-version"
-import type { Model } from "~/services/copilot/get-models"
 
 import { state } from "./state"
 
@@ -25,7 +26,7 @@ export function normalizeClaudeModelVersion(model: string): string {
 
   // Convert numeric segments from hyphen to dot, e.g. claude-opus-4-6 -> claude-opus-4.6.
   // Only replace when the next numeric token ends at '-' or end, so suffixes like '-1m' stay unchanged.
-  return model.replace(/(\d)-(?=\d(?:-|$))/g, "$1.")
+  return model.replaceAll(/(\d)-(?=\d(?:-|$))/g, "$1.")
 }
 
 /**
@@ -56,16 +57,16 @@ export function resolveModelId(model: string, c?: Context): string {
 /**
  * Calculate Jaccard similarity between two strings based on character bigrams.
  */
-export function jaccardSimilarity(str1: string, str2: string): number {
-  const getBigrams = (str: string): Set<string> => {
-    const bigrams = new Set<string>()
-    const normalized = str.toLowerCase().replace(/[^a-z0-9]/g, "")
-    for (let i = 0; i < normalized.length - 1; i++) {
-      bigrams.add(normalized.substring(i, i + 2))
-    }
-    return bigrams
+function getBigrams(str: string): Set<string> {
+  const bigrams = new Set<string>()
+  const normalized = str.toLowerCase().replaceAll(/[^a-z0-9]/g, "")
+  for (let i = 0; i < normalized.length - 1; i++) {
+    bigrams.add(normalized.slice(i, i + 2))
   }
+  return bigrams
+}
 
+export function jaccardSimilarity(str1: string, str2: string): number {
   const bigrams1 = getBigrams(str1)
   const bigrams2 = getBigrams(str2)
 
