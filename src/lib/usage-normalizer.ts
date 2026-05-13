@@ -97,6 +97,50 @@ export interface StreamUsageAccumulator {
   finalize(): NormalizedUsage
 }
 
+interface ResponsesUsageShape {
+  input_tokens?: number
+  output_tokens?: number
+  total_tokens?: number
+  input_tokens_details?: { cached_tokens?: number }
+  output_tokens_details?: { reasoning_tokens?: number }
+}
+
+export function normalizeResponsesFinal(usage: unknown): NormalizedUsage {
+  const u = (usage ?? {}) as ResponsesUsageShape
+  const inputTokens = numOr0(u.input_tokens)
+  const cachedInputTokens = numOr0(u.input_tokens_details?.cached_tokens)
+  const outputTokens = numOr0(u.output_tokens)
+  const reasoningTokens = numOr0(u.output_tokens_details?.reasoning_tokens)
+  const totalTokens = numOr0(u.total_tokens) || inputTokens + outputTokens
+  return {
+    inputTokens,
+    cachedInputTokens,
+    outputTokens,
+    reasoningTokens,
+    totalTokens,
+  }
+}
+
+export function createResponsesAccumulator(): StreamUsageAccumulator {
+  let saved: ResponsesUsageShape | undefined
+  return {
+    feed(chunk) {
+      const c = chunk as
+        | { type?: string; response?: { usage?: ResponsesUsageShape } }
+        | null
+        | undefined
+      if (!c) return
+      if (c.type === "response.completed" && c.response?.usage) {
+        saved = c.response.usage
+      }
+    },
+    finalize() {
+      if (!saved) throw new UsageMissingError()
+      return normalizeResponsesFinal(saved)
+    },
+  }
+}
+
 export function createOpenAIAccumulator(): StreamUsageAccumulator {
   let saved: OpenAIUsageShape | undefined
 

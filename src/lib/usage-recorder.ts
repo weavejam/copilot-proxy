@@ -5,7 +5,11 @@ import type { NormalizedUsage } from "./usage-normalizer"
 
 import { getDb } from "./db"
 
-export type UsageEndpoint = "chat.completions" | "messages" | "embeddings"
+export type UsageEndpoint =
+  | "chat.completions"
+  | "messages"
+  | "embeddings"
+  | "responses"
 export type UpstreamFormat = "openai" | "anthropic"
 export type UsageStatus = "ok" | "error" | "aborted"
 

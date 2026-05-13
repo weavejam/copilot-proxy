@@ -18,10 +18,10 @@ import { recordUsage } from "~/lib/usage-recorder"
 import { makeApiContext, resolveAndMapModelId } from "~/lib/utils"
 import { withAccount } from "~/lib/with-account"
 import {
-  createChatCompletions,
   type ChatCompletionChunk,
   type ChatCompletionResponse,
 } from "~/services/copilot/create-chat-completions"
+import { dispatchChatCompletion } from "~/services/copilot/upstream-router"
 
 import {
   type AnthropicMessagesPayload,
@@ -184,11 +184,11 @@ export async function handleCompletion(c: Context) {
   const tStart = Date.now()
   let usedAccount: Account | undefined
 
-  let response: Awaited<ReturnType<typeof createChatCompletions>>
+  let response: Awaited<ReturnType<typeof dispatchChatCompletion>>
   try {
     response = await withAccount(c, (account) => {
       usedAccount = account
-      return createChatCompletions(makeApiContext(account), openAIPayload)
+      return dispatchChatCompletion(makeApiContext(account), openAIPayload)
     })
   } catch (err) {
     if (usedAccount) {
@@ -262,5 +262,5 @@ export async function handleCompletion(c: Context) {
 }
 
 const isNonStreaming = (
-  response: Awaited<ReturnType<typeof createChatCompletions>>,
+  response: Awaited<ReturnType<typeof dispatchChatCompletion>>,
 ): response is ChatCompletionResponse => Object.hasOwn(response, "choices")
