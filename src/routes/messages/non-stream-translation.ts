@@ -25,7 +25,7 @@ import {
   type AnthropicUserContentBlock,
   type AnthropicUserMessage,
 } from "./anthropic-types"
-import { mapOpenAIStopReasonToAnthropic } from "./utils"
+import { mapOpenAIStopReasonToAnthropic, toAnthropicUsage } from "./utils"
 
 // Payload translation
 
@@ -306,17 +306,7 @@ export function translateToAnthropic(
     content: [...allTextBlocks, ...allToolUseBlocks],
     stop_reason: mapOpenAIStopReasonToAnthropic(stopReason),
     stop_sequence: null,
-    usage: {
-      input_tokens:
-        (response.usage?.prompt_tokens ?? 0)
-        - (response.usage?.prompt_tokens_details?.cached_tokens ?? 0),
-      output_tokens: response.usage?.completion_tokens ?? 0,
-      ...(response.usage?.prompt_tokens_details?.cached_tokens
-        !== undefined && {
-        cache_read_input_tokens:
-          response.usage.prompt_tokens_details.cached_tokens,
-      }),
-    },
+    usage: toAnthropicUsage(response.usage, { includeOutput: true }),
   }
 }
 
